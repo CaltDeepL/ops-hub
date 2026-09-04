@@ -1,6 +1,7 @@
 pub mod config;
 pub mod error;
 pub mod handler;
+pub mod run_lock;
 pub mod state;
 pub mod trace_id;
 
@@ -16,6 +17,7 @@ use crate::state::AppState;
 pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(handler::health::health))
+        .route("/livez", get(handler::livez::livez))
         .layer(TraceLayer::new_for_http())
         // 後に足したレイヤほど外側。trace_id を最外に置くことで、
         // TraceLayer が出すログにもスパンの trace_id が載る

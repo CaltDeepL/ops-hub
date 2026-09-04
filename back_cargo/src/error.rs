@@ -49,7 +49,9 @@ impl AppError {
             Self::Unprocessable(_) => StatusCode::UNPROCESSABLE_ENTITY,
             Self::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
             // DB由来のうち「繋がらない」は 503（詳細設計 2.2）。それ以外は 500
-            Self::Database(error) if is_connectivity_error(error) => StatusCode::SERVICE_UNAVAILABLE,
+            Self::Database(error) if is_connectivity_error(error) => {
+                StatusCode::SERVICE_UNAVAILABLE
+            }
             Self::Database(_) | Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -184,7 +186,10 @@ pub fn classify(sqlstate: &str, constraint: Option<&str>) -> DbErrorClass {
 fn is_connectivity_error(error: &sqlx::Error) -> bool {
     if matches!(
         error,
-        sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed | sqlx::Error::Io(_) | sqlx::Error::Tls(_)
+        sqlx::Error::PoolTimedOut
+            | sqlx::Error::PoolClosed
+            | sqlx::Error::Io(_)
+            | sqlx::Error::Tls(_)
     ) {
         return true;
     }
@@ -380,8 +385,10 @@ mod tests {
     #[tokio::test]
     async fn server_errors_expose_only_trace_id() {
         let secret = "https://hooks.slack.com/services/T000/B000/xxxxxxxx";
-        let (status, json, content_type) =
-            body_of(AppError::Internal(anyhow::anyhow!("Slack投稿に失敗: {secret}"))).await;
+        let (status, json, content_type) = body_of(AppError::Internal(anyhow::anyhow!(
+            "Slack投稿に失敗: {secret}"
+        )))
+        .await;
 
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(content_type, "application/problem+json");

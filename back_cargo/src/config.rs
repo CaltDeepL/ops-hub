@@ -15,18 +15,27 @@ pub struct Config {
     pub port: u16,
     pub db_max_connections: u32,
     pub db_acquire_timeout: Duration,
+    /// advisory lock のキー。DB単位のスコープなので環境ごとに変える必要はない。
+    pub run_lock_key: i64,
 }
 
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
         let database_url =
             std::env::var("DATABASE_URL").context("DATABASE_URL が設定されていません")?;
+        let run_lock_key = parse_env("RUN_LOCK_KEY", 8_421_337_i64)?;
+        // 負の値を許すと pg_locks からキーを復元する際に符号拡張が必要になり、
+        // 脱出ハッチ（タスク7）のSQLが静かに壊れる。入口で弾く。
+        if run_lock_key <= 0 {
+            return Err(anyhow!("環境変数 RUN_LOCK_KEY は正の整数にしてください"));
+        }
 
         Ok(Self {
             database_url,
             port: parse_env("PORT", 8080)?,
             db_max_connections: parse_env("DB_MAX_CONNECTIONS", 5)?,
             db_acquire_timeout: Duration::from_secs(parse_env("DB_ACQUIRE_TIMEOUT_SECS", 5)?),
+            run_lock_key,
         })
     }
 
@@ -128,6 +137,7 @@ mod tests {
         let pooled = Config {
             database_url: "postgres://u:p@ep-cool-1-pooler.aws.neon.tech/db".into(),
             port: 8080,
+            run_lock_key: 8421337,
             db_max_connections: 5,
             db_acquire_timeout: Duration::from_secs(5),
         };
@@ -135,6 +145,7 @@ mod tests {
 
         let direct = Config {
             database_url: "postgres://u:p@ep-cool-1.aws.neon.tech/db".into(),
+            run_lock_key: 8421337,
             ..pooled.clone()
         };
         assert!(!direct.is_pooled_endpoint());
