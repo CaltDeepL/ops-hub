@@ -14,8 +14,8 @@ services:
     # ここがずれると 1 run あたり十数往復ぶんの太平洋横断が乗る。
     region: singapore
 
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
+    dockerfilePath: ./back_cargo/Dockerfile
+    dockerContext: ./back_cargo
 
     # DB に触らない liveness 用のパス。/health（DB疎通あり・503を返す）を
     # ここに指定してはいけない。理由は docs/render-setup.md 4章。
