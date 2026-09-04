@@ -1,0 +1,60 @@
+# Render Blueprint（ops-hub）
+#
+# 反映方法は docs/render-setup.md を参照。
+# ダッシュボードで手作業で作らずここに集約するのは、リージョンやヘルスチェックパスの
+# ような「後から気づきにくい設定」を差分としてレビューできるようにするため。
+
+services:
+  - type: web
+    name: ops-hub
+    runtime: docker
+    plan: free
+
+    # Neon を ap-southeast-1 に作ったので、必ず singapore に置く。
+    # ここがずれると 1 run あたり十数往復ぶんの太平洋横断が乗る。
+    region: singapore
+
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+
+    # DB に触らない liveness 用のパス。/health（DB疎通あり・503を返す）を
+    # ここに指定してはいけない。理由は docs/render-setup.md 4章。
+    healthCheckPath: /livez
+
+    # CI green → Deploy Hook の運用に揃えるため、Render 側の自動デプロイは切る。
+    # （asset-tracker と同じ運用。#24 で採用した方式）
+    autoDeploy: false
+
+    envVars:
+      # Neon の直接エンドポイント（-pooler なし）。値はダッシュボードで入力する。
+      - key: DATABASE_URL
+        sync: false
+
+      # Slack Incoming Webhook。タスク11で使う。
+      - key: SLACK_WEBHOOK_URL
+        sync: false
+
+      # "source:token" のカンマ区切り。タスク12で使う。
+      - key: SERVICE_TOKENS
+        sync: false
+
+      - key: RUN_LOCK_KEY
+        value: "8421337"
+
+      - key: DB_MAX_CONNECTIONS
+        value: "5"
+
+      - key: DB_ACQUIRE_TIMEOUT_SECS
+        value: "5"
+
+      - key: QUIET_HOURS
+        value: "22:00-08:00"
+
+      - key: RUST_LOG
+        value: "info,sqlx=warn,tower_http=info"
+
+      - key: LOG_FORMAT
+        value: "json"
+
+    # PORT は設定しない。Render が注入する値（既定 10000）を Config が読む。
+    # ここで固定するとポート不一致で「デプロイは成功するのに 502」になる。
