@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.96"
 publish = false
-description = "監視・通知ハブ"
 
 [dependencies]
 axum = "0.8"
@@ -13,22 +12,26 @@ tower-http = { version = "0.6", features = ["trace"] }
 
 sqlx = { version = "0.9", default-features = false, features = [
   "runtime-tokio",
-  "tls-rustls",
+  "tls-rustls-ring",
   "postgres",
   "uuid",
   "chrono",
   "macros",
 ] }
 
-# タスク8（provider/probe.rs）で本格的に使う。タスク1では healthcheck サブコマンドのみで使用。
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
-
-clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+clap = { version = "4", features = ["derive", "env"] }
+anyhow = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-anyhow = "1"
+dotenvy = "0.15"
+url = "2"
+
+# healthcheck サブコマンド用。タスク8の provider/probe.rs でも同じクライアントを使う
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 
 [profile.release]
 # distroless へ載せるバイナリを小さくする。デバッグ情報は不要。
