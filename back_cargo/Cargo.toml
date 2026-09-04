@@ -1,0 +1,35 @@
+[package]
+name = "ops-hub"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+publish = false
+description = "監視・通知ハブ"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+tower-http = { version = "0.6", features = ["trace"] }
+
+sqlx = { version = "0.9", default-features = false, features = [
+  "runtime-tokio",
+  "tls-rustls",
+  "postgres",
+  "uuid",
+  "chrono",
+  "macros",
+] }
+
+# タスク8（provider/probe.rs）で本格的に使う。タスク1では healthcheck サブコマンドのみで使用。
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+anyhow = "1"
+
+[profile.release]
+# distroless へ載せるバイナリを小さくする。デバッグ情報は不要。
+strip = "debuginfo"

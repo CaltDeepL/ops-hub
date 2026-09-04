@@ -1,0 +1,45 @@
+name: ops-hub
+
+# ホスト側の公開ポートは .env で上書きできる（既定は 8081 / 5433）。
+# 開発機では 8080 と 5432 が他プロセスに埋まっていることが多いため、
+# 既定値をずらしてある。コンテナ内部のポートは 8080 / 5432 のまま変えない
+# ので、本番(Render / Neon)の構成には影響しない。
+services:
+  db:
+    # 本番は Neon の PostgreSQL 17。ローカルも版を合わせる。
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_USER: ops_hub
+      POSTGRES_PASSWORD: ops_hub
+      POSTGRES_DB: ops_hub
+    ports:
+      # sqlx-cli / psql をホストから叩くため（タスク2以降で使う）
+      - "${DB_HOST_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ops_hub -d ops_hub"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # コンテナ間はサービス名 db の 5432。ホスト側の公開ポートとは無関係。
+      DATABASE_URL: postgres://ops_hub:ops_hub@db:5432/ops_hub
+      PORT: "8080"
+      RUST_LOG: info,sqlx=warn,tower_http=info
+      # ローカルで読みやすくしたいときは pretty
+      LOG_FORMAT: json
+    ports:
+      - "${API_HOST_PORT:-8081}:8080"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
