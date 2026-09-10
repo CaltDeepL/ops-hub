@@ -8,14 +8,16 @@ Codex は **実装・レビュー指摘修正** を担当する。
 標準フロー:
 
 ```text
-/spec NN
+/spec ID
   ↓
-/impl NN
+/impl ID
   ↓ Codex
-/review NN
+/review ID
   ├─ READY → 人間がcommit
-  └─ CHANGES REQUESTED → /fix NN → Codex → /review NN
+  └─ CHANGES REQUESTED → /fix ID → Codex → /review ID
 ```
+
+`ID` にはQ系列（例: `Q1`）またはTask 07以降の数値系列（例: `07`）を指定する。
 
 Claude Code と Codex に同じworking treeを同時編集させない。
 
@@ -24,7 +26,7 @@ Claude Code と Codex に同じworking treeを同時編集させない。
 - 16タスク全体: `docs/implementation-plan.md`
 - AI向け現在状態: `docs/ai/PROJECT.md`
 - handoff規約: `docs/ai/WORKFLOW.md`
-- Task 07以降の作業契約: `docs/task-NN-*.md`
+- managed taskの作業契約: `docs/task-ID-*.md`
 - 長期的な設計理由: `docs/adr/`
 
 Task 01〜06 の既存文書へ機械管理用frontmatterを後付けしない。

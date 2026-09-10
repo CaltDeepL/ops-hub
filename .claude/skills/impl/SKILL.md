@@ -1,14 +1,14 @@
 ---
 name: impl
 description: 承認済みops-hub taskをCodexへ渡すための日本語実装プロンプトを生成する。Claude自身は実装しない。
-argument-hint: "NN"
+argument-hint: "ID"
 disable-model-invocation: true
 ---
 
 Task `$0` のCodex handoffを作る。
 
 1. `docs/task-$0-*.md`、`AGENTS.md`、`docs/ai/PROJECT.md`、`docs/ai/WORKFLOW.md` を読む。
-2. Task 07以降では `status: spec` であること、未解決のSpec Deviationsがないことを確認する。
+2. managed taskでは `status: spec` であること、未解決のSpec Deviationsがないことを確認する。
 3. 設計が曖昧なら実装プロンプトを作らず `/spec $0` に戻す。
 4. task statusだけを `implementing` へ変更する。
 5. `make task-index` を実行する。
@@ -34,4 +34,3 @@ git commit / rebase / push / deploy は行わないでください。
 7. pbcopy / wl-copy / xclip が既に存在する場合のみclipboardへコピーする。インストールしない。
 
 8. production codeは編集しない。
-

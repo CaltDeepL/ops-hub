@@ -1,7 +1,7 @@
 # ---------- builder ----------
 # ランタイムの distroless/cc-debian12 と同じ Debian 12 系で作る。
 # glibc の版がずれると、実行時に「起動した瞬間に落ちる」形で表面化する。
-FROM rust:1.96-slim-bookworm AS builder
+FROM rust:1.96.0-slim-bookworm AS builder
 
 WORKDIR /build
 
@@ -11,7 +11,7 @@ ENV SQLX_OFFLINE=true
 
 # 依存だけを先に解決してレイヤに固める。src/ の変更で依存の再ビルドが起きないように。
 # Cargo.lock は必ずコミットしておく（バイナリなので再現性が要る）。
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 RUN mkdir -p src \
     && echo "fn main() {}" > src/main.rs \
     && touch src/lib.rs \

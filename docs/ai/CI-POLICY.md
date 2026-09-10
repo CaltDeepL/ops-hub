@@ -22,9 +22,9 @@ Task 15の範囲なので、それ以前のAI scaffold導入だけを理由に�
 
 ### 2. コード品質 CI
 
-ロードマップ上はTask 16「OpenAPI + CI + Runbook」で本実装する。
+コード品質CIはQ1「CI / Quality Gate 基盤」で確定する。
 
-Task 16で品質CIを確定するときは、Cargoコマンドをworkflowへ重複記述せず、ローカルPostgreSQL service/schemaを準備した後に次だけを品質ゲートとして呼ぶ。
+品質CIでは、Cargoコマンドをworkflowへ重複記述せず、ローカルPostgreSQL service/schemaを準備した後に次だけを品質ゲートとして呼ぶ。
 
 ```yaml
 - name: Verify
@@ -35,11 +35,9 @@ Task 16で品質CIを確定するときは、Cargoコマンドをworkflowへ重�
 
 CI側のPostgreSQL公開portが5432なら、そのCI用DATABASE_URLを使ってよい。`make verify` はhostを検査しportは固定しない。
 
-## Task 16以前
+## Q1以降
 
-Task 16が未実装なら、AI scaffold導入のためだけに新規quality workflowを先回りして作らない。
-
-ローカル最終ゲートとして `make verify` を先に固定し、Task 16でそのままCIから呼ぶ。
+Q1で固定した `make verify` を、ローカルとコード品質CIで共通の最終ゲートとして呼ぶ。
 
 ## Security
 

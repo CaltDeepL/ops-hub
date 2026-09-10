@@ -4,7 +4,7 @@
 
 会話履歴ではなく、repository内のtask docをClaude CodeとCodexのhandoff契約にする。
 
-## Task 07以降の状態
+## managed taskの状態
 
 ```text
 planned
@@ -66,7 +66,7 @@ Codexはtask docとAGENTS.mdを契約として実装する。
 - `Spec Deviations` へ記録
 - `status: blocked`
 - 矛盾する実装を止める
-- `/spec NN` に戻す
+- `/spec ID` に戻す
 
 ## 3. Verification — Codex
 
@@ -124,7 +124,7 @@ Claude/Codexは通常フローでcommitしない。
 
 `status: done` + Review READY + verify証拠確認後、人間がcommitする。
 
-既存運用どおり `docs/commits/task-NN-<slug>.txt` にコミット文面を残す。
+既存運用どおり `docs/commits/task-ID-<slug>.txt` にコミット文面を残す。
 
 ## 7. task index
 
