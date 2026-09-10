@@ -1,7 +1,7 @@
 ---
 id: "Q1"
 slug: ci-quality-gate
-status: fixing
+status: done
 # planned -> spec -> implementing -> review -> fixing -> review -> done
 # 設計矛盾時: blocked -> spec
 depends_on: ["06"]
@@ -53,8 +53,8 @@ architect による検証の結果、これらはAC-1〜AC-9の大半を実質�
 - [x] AC-2: Q系列が `docs/task-INDEX.md` に表示され、`make task-index` 実行後の next task が `status` に応じて動的に変わる（`Q1 done → Q2`, `Q2 done → Q3`, `Q3 done → 07` を手動でfrontmatterを書き換えて再現確認する）
 - [x] AC-3: Rust `1.96.0` / rustfmt / clippy が `back_cargo/rust-toolchain.toml` で固定され、`Cargo.toml` の `rust-version = "1.96"` と矛盾しない。CIワークフローはこのファイルから自動解決させ、`rustup toolchain install <version>` のようなバージョン番号のhardcodeを重複させない（DD-10）。Dockerfileのbuilderベースイメージは `rust-toolchain.toml` の `channel` と一致する具体バージョンタグ（例: `rust:1.96.0-slim-bookworm`）に固定する（DD-10）
 - [x] AC-4: `make verify` が `DATABASE_URL` 無しの `SQLX_OFFLINE=true cargo check --all-targets --all-features` を含み、これがローカルで実際に成功する
-- [ ] AC-5: PRと `main` push で `.github/workflows/ci.yml` の `verify` jobが起動する（実際にGitHub Actions上で1回green実行された証跡をImplementation Recordへ残す）
-- [ ] AC-6: CIのPostgreSQL 17 service containerへmigration適用後、`make verify` がCI上で成功する
+- [x] AC-5: PRと `main` push で `.github/workflows/ci.yml` の `verify` jobが起動する（実際にGitHub Actions上で1回green実行された証跡をImplementation Recordへ残す）
+- [x] AC-6: CIのPostgreSQL 17 service containerへmigration適用後、`make verify` がCI上で成功する
 - [x] AC-7: CIがNeon / production secretsを一切参照しない（`secrets.*` 未使用、`DATABASE_URL` はservice containerのみ）
 - [x] AC-8: `cargo audit` が `.github/workflows/security-audit.yml` として独立し、`schedule` (weekly) と `workflow_dispatch` の両方をサポートし、`make verify` には含まれない
 - [x] AC-9: `.github/workflows/*.yml` の `uses:` がすべて40桁のfull commit SHAで固定され、コメントのバージョン番号と実際のSHAが一致する（Docker service image (`postgres:17-bookworm` 等) のタグ指定はこのACの対象外とする）
@@ -185,13 +185,24 @@ exit 0
 CI実行証跡（AC-5/AC-6）:
 
 ```text
-未取得。2026-09-11時点のGitHub Actions APIはworkflow run 0件。
-本taskでは指示どおりcommit/pushを行っていないため、AC-5/AC-6は未完了。
+main push トリガー:
+  https://github.com/CaltDeepL/ops-hub/actions/runs/34539586345
+  event: push, head_branch: main, status: completed, conclusion: success
+
+PR (infrastructure/ci-setup) トリガー:
+  https://github.com/CaltDeepL/ops-hub/actions/runs/34539577786
+  event: pull_request, head_branch: infrastructure/ci-setup, status: completed, conclusion: success
+
+確認方法: GitHub Actions API (2026-09-11、Claude Codeが `gh` 未認証のため
+`curl https://api.github.com/repos/CaltDeepL/ops-hub/actions/runs/<run_id>` で無認証取得し、
+event/head_branch/status/conclusionを実測)。
+両runとも `verify` jobを含み、PostgreSQL 17 service container上でmigration適用後の
+`make verify` がCI上で成功したことを確認。
 ```
 
 ### 残課題
 
-- 人間が本差分をPRまたはmainへpushして `verify` jobを起動し、green runのURLまたはrun IDを本recordへ追記する。確認後にAC-5/AC-6を完了へ更新する。
+- なし。人間が本差分をpush/PRし、`verify` jobのgreen run証跡（push: main / pull_request: infrastructure/ci-setup）を確認・追記済み。AC-5/AC-6を完了へ更新した。
 
 ## 11. Review Record
 
@@ -199,14 +210,27 @@ _Claude Code親セッションがread-only reviewerの結果を転記する。_
 
 ### Verification
 
-- [ ] `make verify` の実際の成功結果を確認した。（1〜2巡目ともにローカルDocker PostgreSQLが使えず、フル`make verify`は未実行。SQLX_OFFLINE checkとcheck_task_docs.pyの部分実行のみ確認済み。CIでの実行証跡もまだ無い＝AC-5/6未達と表裏）
-- [x] 全Acceptance Criteriaを具体的diff/test証拠へ対応付けた。（1巡目: reviewer + reviewer-criticalの2段階、2巡目: reviewerによるfix確認、で file:line 根拠を確認済み）
+- [x] `make verify` の実際の成功結果を確認した。
+      （ローカルDocker PostgreSQL不使用のためフル`make verify`のローカル実行は未実施だが、fix cycle 3のreviewerがCI run `34539586345` のjobs APIを直接叩き、`verify` jobの `Run migrations` → `Verify`（`make verify`本体）ステップが `conclusion=success` であることを実測確認した。task doc完了条件（§冒頭「CI上で`verify` jobが実際にgreenになる」）が要求する形そのもの）
+- [x] 全Acceptance Criteriaを具体的diff/test証拠へ対応付けた。
+      （1巡目: reviewer + reviewer-criticalの2段階、2巡目: reviewerによるfix確認、3巡目: reviewerによるAC-5/AC-6証跡の独立検証、で file:line 根拠を確認済み）
 
 ### Fix cycle 2（F1/F1a/F1b/F4対応後の再レビュー）
 
 `reviewer`（Sonnet）が `git diff -- AGENTS.md` を実測: 差分は `docs/task-NN-*.md`→`docs/task-ID-*.md`（AGENTS.md:15）と「Task 07以降は」→「managed task（Q系列およびTask 07以降）は」（AGENTS.md:118）の2箇所のみに縮小されており、F1/F1a/F1bの原因だった新規ガバナンスセクション（自律動作・自動承認等）は完全に削除されたことを確認。F4はtask doc側の文言修正で解消済み。AGENTS.md以外への無関係な変更混入もなし。AC-1〜AC-4, AC-7〜AC-12は今回のfixで壊れていないことも再確認済み。ローカル `SQLX_OFFLINE cargo check` と `check_task_docs.py` は成功。フル`make verify`はローカルDB無しのため未実行（1巡目と同じ制約）。
 
 残る唯一の指摘はF2（AC-5/AC-6未達）で、これはCodexの実装欠陥ではなく、人間がpush/PRしてCI上の`verify` job green実行証跡を得る必要がある構造的な残課題。BLOCKER 0 / HIGH 1（F2のみ）/ MEDIUM 0 / LOW 2（F5, F6、いずれも今回対応不要）。
+
+### Fix cycle 3（F2対応後の最終レビュー）
+
+人間がPR #2（`infrastructure/ci-setup` → `main`、head commit `8af9284`、merge commit `7418cbda2e80056394c9477643a79c4381c4ab42`）を作成・mergeし、Claudeが以下2件のCI run証跡をImplementation Recordへ追記した。
+
+- push/main run: `https://github.com/CaltDeepL/ops-hub/actions/runs/34539586345`（`head_sha=7418cbda...`, conclusion=success）
+- pull_request run: `https://github.com/CaltDeepL/ops-hub/actions/runs/34539577786`（`head_sha=8af9284...`, conclusion=success）
+
+`reviewer`（Sonnet）がこれをGitHub Actions REST APIへの無認証GETで独立に再検証: 両run IDのevent/head_branch/head_sha/conclusionを実測し、`head_sha`が実際のmerge commit・PR head commitと一致することを`git show`で確認。さらにrun `34539586345`のjobs APIで`verify`ジョブの`Run migrations`（Postgres 17 service containerへのmigration適用）→`Verify`（`make verify`本体）の各ステップが`conclusion=success`であることを実測し、AC-5・AC-6を正当化した。F1/F1a/F1b/F4（既解消）とF5/F6（LOW、対応不要）に変化なし。`docs/implementation-plan.md`の大規模差分（F3）にも新たな悪化なし。Spec Deviations未解決なし。
+
+結論: BLOCKER 0 / HIGH 0 / MEDIUM 0 / LOW 2（F5, F6、いずれも対応不要のQ2/軽微引き継ぎ事項）→ **READY**。
 
 ### Acceptance evidence
 
@@ -216,8 +240,8 @@ _Claude Code親セッションがread-only reviewerの結果を転記する。_
 | AC-2 | `scripts/update_task_index.py:140-149`（next_task動的算出）／`docs/task-INDEX.md:6`「次タスク: Q1」 |
 | AC-3 | `back_cargo/rust-toolchain.toml:1-4`、`back_cargo/Cargo.toml:5`（`rust-version = "1.96"`）。実測 `rustc --version` → `1.96.0`。※文言とDD-10の関係はF4参照 |
 | AC-4 | `Makefile:6`（`env -u DATABASE_URL SQLX_OFFLINE=true cargo check ...`）／ローカル実行で成功確認済み |
-| AC-5 | `docs/task-Q1-ci-quality-gate.md:56` `[ ]` — **未達**（CI実行証跡なし） |
-| AC-6 | 同上 — **未達** |
+| AC-5 | GitHub Actions run [`34539586345`](https://github.com/CaltDeepL/ops-hub/actions/runs/34539586345)（`event=push`, `head_branch=main`, `head_sha=7418cbda...`＝PR#2 merge commit, `conclusion=success`）と run [`34539577786`](https://github.com/CaltDeepL/ops-hub/actions/runs/34539577786)（`event=pull_request`, `head_branch=infrastructure/ci-setup`, `head_sha=8af9284...`, `conclusion=success`）をreviewerがAPI実測。PR/main push双方で`verify` jobが起動し成功 |
+| AC-6 | run `34539586345`のjobs APIで`verify`ジョブの`Run migrations`（Postgres 17 service containerへmigration適用）→`Verify`（`make verify`本体）ステップが`conclusion=success`であることをreviewerが実測 |
 | AC-7 | `.github/workflows/ci.yml:63-78`／`security-audit.yml`全体（`secrets.*`未使用、`permissions: contents: read`のみ、`pull_request`で`pull_request_target`ではない） |
 | AC-8 | `.github/workflows/security-audit.yml:3-6`（`schedule`+`workflow_dispatch`）／`Makefile`にaudit混入なし |
 | AC-9 | `ci.yml:39,42,47,57` / `security-audit.yml:23,26`。`git ls-remote`で4件全て実SHAと一致確認済み（`rust-cache`はannotated tag `v2.9.2^{}`のderef先が正しく使われている） |
@@ -232,7 +256,7 @@ _Claude Code親セッションがread-only reviewerの結果を転記する。_
 | F1 | ~~HIGH~~ **解消** | `AGENTS.md:15,118`（旧`:69-192,349-437`） | ~~task doc §4はAGENTS.md変更を「AC-10（`NN`→`ID`一般化）」に限定しているが、実際は345行規模の新規ガバナンスセクションが追加されていた~~ → Codexが新規セクションを全削除し、AC-10スコープの2箇所（`docs/task-NN-*.md`→`docs/task-ID-*.md`、「Task 07以降」→「managed task」）のみに縮小。fix cycle 2のreviewerが`git diff`で実測確認 | 対応不要（解消済み） | fix cycle 2 reviewer検証 |
 | F1a | ~~HIGH~~ **解消** | （該当セクション削除により消滅） | ~~`.env`無条件読み取り自動承認がCLAUDE.mdと矛盾~~ → 原因セクションごと削除されたため解消 | 対応不要（解消済み） | fix cycle 2 reviewer検証 |
 | F1b | ~~LOW~~ **解消** | （該当セクション削除により消滅） | ~~`sed`の誤分類~~ → 原因セクションごと削除されたため解消 | 対応不要（解消済み） | fix cycle 2 reviewer検証 |
-| F2 | HIGH | `docs/task-Q1-ci-quality-gate.md:16,56-57` | 完了条件は「CI上で`verify` jobが実際にgreenになる」ことを明示要求しているが、AC-5/AC-6は未達（Implementation Recordは「commit/pushしていないため未取得」と正直に記載）。`scripts/check_task_docs.py:141`は`status=done`時の未完了ACをFAILさせるため、現状のまま`done`化は不可能 | 人間が本差分をpush/PRし、`verify` jobのgreen run URL/run IDをImplementation Recordへ追記した上でAC-5/AC-6を`[x]`にする。Codexの実装欠陥ではなくtask doc自身がpush権限を持たないCodexに達成不能な完了条件を課している構造的な問題 | task doc `:16,:56-57`／`scripts/check_task_docs.py:141`／AGENTS.md:317（Codexはpush禁止） |
+| F2 | ~~HIGH~~ **解消** | `docs/task-Q1-ci-quality-gate.md:16,56-57` | ~~完了条件は「CI上で`verify` jobが実際にgreenになる」ことを明示要求しているが、AC-5/AC-6は未達~~ → 人間がPR #2をmerge（`8af9284`→`7418cbda`）し、Claudeが2件のCI run URL/run IDをImplementation Recordへ追記。fix cycle 3のreviewerがGitHub Actions APIへの実測でhead_sha一致・`verify` job成功（migration適用含む）を独立検証しAC-5/AC-6を正当化 | 対応不要（解消済み） | fix cycle 3 reviewer検証（run `34539586345`, `34539577786`） |
 | F3 | LOW | `docs/implementation-plan.md`（全体） | 1000行規模の差分。§1で「Q1着手前から存在する未コミット差分」として土台化は授権済みだが、Task 07の`depends_on`変更や章番号の再構成など書式変換以外の実質変更もあり、task doc §4に記載がない | 次回以降、§4の想定変更箇所に実質変更を伴うファイルを明記する。内容はAC/DDと整合しており修正必須ではない | task doc §1:34-48, §4:92-97 |
 | F4 | MEDIUM | `docs/task-Q1-ci-quality-gate.md:54` vs `:76` | AC-3の文言「baseイメージタグにバージョン番号を重複記述しない」と、DD-10「`rust-toolchain.toml`のchannelと一致する具体バージョンタグに固定する（例: `rust:1.96.0-slim-bookworm`）」が字面上矛盾する。実装はDD-10を採用（`back_cargo/Dockerfile:4`）しており判断自体は妥当 | ~~task doc内の記載矛盾をSpec Deviationsへ記録し、AC-3の文言をDD-10と整合する表現へ修正する~~ → **対応済み**: `/fix Q1`時にClaudeがAC-3文言をDD-10と整合する表現へ直接修正した（task doc記載のみの修正のためCodex対応不要） | task doc `:54,:76`／`back_cargo/Dockerfile:4` |
 | F5 | LOW | `.github/workflows/ci.yml:12-14` | `cancel-in-progress: true`が`push: main`にも適用されるため、Q2でrequired checkにした際、main連続pushで進行中の`verify` runがcancelされたまま残る可能性がある | Q2の設計時に、main pushの`concurrency`設定見直しを検討事項として引き継ぐ | `.github/workflows/ci.yml:3-14` |
@@ -241,14 +265,16 @@ _Claude Code親セッションがread-only reviewerの結果を転記する。_
 ### Review disposition
 
 - [ ] BLOCKED
-- [x] CHANGES REQUESTED
-- [ ] READY
+- [ ] CHANGES REQUESTED
+- [x] READY
 
 **fix cycle 1**（Sonnet→Opus 2段階）: BLOCKER 0 / HIGH 3（F1, F1a, F2）/ MEDIUM 1（F4）/ LOW 3（F1b, F3, F5, F6）→ CHANGES REQUESTED。
 
-**fix cycle 2**（F1/F1a/F1b/F4対応後、Sonnet再レビュー）: F1/F1a/F1b/F4は解消確認。残るのはBLOCKER 0 / HIGH 1（F2のみ）/ MEDIUM 0 / LOW 2（F5, F6、いずれも今回対応不要）→ **CHANGES REQUESTED**（唯一の理由はF2）。
+**fix cycle 2**（F1/F1a/F1b/F4対応後、Sonnet再レビュー）: F1/F1a/F1b/F4は解消確認。残るのはBLOCKER 0 / HIGH 1（F2のみ）/ MEDIUM 0 / LOW 2（F5, F6、いずれも今回対応不要）→ CHANGES REQUESTED（唯一の理由はF2）。
 
-F2はCodexの実装修正では解決できない（push権限がない）。人間が本差分をPR/pushし、GitHub Actions上で`verify` jobが実際にgreenになった実行証跡（run URL/run ID）をImplementation Recordへ追記した後、AC-5/AC-6を`[x]`にして再度`/review Q1`を実行すればREADYへ遷移できる見込み。AGENTS.mdのスコープ超過という残課題は解消済みで、それ以外の実装（CI/toolchain/scripts/AI scaffold/方針文書）に技術的な欠陥は残っていない。
+**fix cycle 3**（F2対応後、Sonnet最終レビュー）: 人間がPR #2をmerge、ClaudeがCI run証跡2件をImplementation Recordへ追記。reviewerがGitHub Actions APIへの実測でhead_sha一致・`verify` job成功（migration適用含む）を独立検証。BLOCKER 0 / HIGH 0 / MEDIUM 0 / LOW 2（F5, F6、いずれも対応不要のQ2/軽微引き継ぎ事項）→ **READY**。
+
+全AC（AC-1〜AC-12）が`[x]`、未解決Spec Deviationsなし、CI上での実際の`make verify`成功証跡（run `34539586345`のjobs API実測）を確認済み。人間によるcommit可能な状態。
 
 ## 12. つまずいた点と教訓
 

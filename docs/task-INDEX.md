@@ -3,7 +3,7 @@
 `docs/implementation-plan.md` の既存16タスクにQ系列の品質タスクを加え、`make task-index` で生成する。
 Task 01〜06はlegacy task docsを変更せずdone扱い。Q系列およびTask 07以降はfrontmatterを状態の正本とする。
 
-**次タスク: Q1**
+**次タスク: Q2**
 
 | ID | Slug | Status | Depends on | Task | File |
 |---:|---|---|---|---|---|
@@ -13,7 +13,7 @@ Task 01〜06はlegacy task docsを変更せずdone扱い。Q系列およびTask 
 | 04 | problem-details | done | [03] | AppError / problem+json | docs/Task_04_apperror problem json.md |
 | 05 | run-lock | done | [04] | RunLock / advisory lock | docs/Task_05_run lock.md |
 | 06 | runs-endpoint | done | [05] | POST /v1/runs 骨格 | docs/Task_06 post runs.md |
-| Q1 | ci-quality-gate | fixing | ["06"] | CI / Quality Gate 基盤 | docs/task-Q1-ci-quality-gate.md |
+| Q1 | ci-quality-gate | done | ["06"] | CI / Quality Gate 基盤 | docs/task-Q1-ci-quality-gate.md |
 | Q2 | main-branch-protection | planned | [Q1] | main branch protection | — |
 | Q3 | dependabot | planned | [Q2] | Dependabot / dependency operations | — |
 | 07 | stale-lock-recovery | planned | [06, Q3] | 取り残し lock 回収 + run入口仕様の仕上げ | — |
