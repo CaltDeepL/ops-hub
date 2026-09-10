@@ -124,3 +124,4 @@ public スキーマの ENUM・関数はいずれも0件。`run` で `1/installed
   0001 と同じやり方で「本当に2件目が弾かれるか」を実接続で確認してから完了とする
 - `outbox_sent_has_timestamp` は `(status = 'sent') = (sent_at IS NOT NULL)` という
   等価CHECK。`failed` 時に `sent_at` を入れていないかも検証項目に含める
+

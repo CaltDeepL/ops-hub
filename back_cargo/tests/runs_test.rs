@@ -170,8 +170,9 @@ async fn 背景処理が終わるとcompletedで締められる(
         .await
         .expect("5秒以内に finished_at が入るはず（背景タスクが締めていない）");
 
+    // T6-1：no-op でも running のまま残さない
     assert_eq!(status, "completed");
-    // タスク6では巡回しないので 0。タスク8でここが変わる
+    // タスク06では巡回しないので 0。タスク08でここが変わる
     assert_eq!(targets_checked, 0);
 
     Ok(())
