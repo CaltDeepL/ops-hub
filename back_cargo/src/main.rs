@@ -1,4 +1,5 @@
 use std::process::ExitCode;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context as _;
@@ -55,7 +56,7 @@ async fn main() -> ExitCode {
 }
 
 async fn serve() -> anyhow::Result<()> {
-    let config = Config::from_env()?;
+    let config = Arc::new(Config::from_env()?);
 
     tracing::info!(
         port = config.port,
@@ -86,7 +87,9 @@ async fn serve() -> anyhow::Result<()> {
 
     tracing::info!(addr = %listener.local_addr()?, "待ち受けを開始しました");
 
-    axum::serve(listener, app(AppState { db: pool }))
+    let state = AppState { db: pool, config };
+
+    axum::serve(listener, app(state))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .context("HTTPサーバが異常終了しました")?;
