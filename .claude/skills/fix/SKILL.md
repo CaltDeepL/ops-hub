@@ -1,7 +1,7 @@
 ---
 name: fix
 description: Review Recordの指摘からCodex向け修正プロンプトを生成する。Claude自身はproduction codeを修正しない。
-argument-hint: "NN"
+argument-hint: "ID"
 disable-model-invocation: true
 ---
 

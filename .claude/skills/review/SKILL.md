@@ -1,14 +1,14 @@
 ---
 name: review
 description: Codex実装後のops-hub taskを証拠ベースでread-onlyレビューし、親ClaudeだけがReview Recordと状態を更新する。
-argument-hint: "NN"
+argument-hint: "ID"
 disable-model-invocation: true
 ---
 
 Task `$0` をレビューする。
 
 1. task doc、`docs/ai/WORKFLOW.md`、実際の `git diff` を読む。
-2. Task 07以降は status を `review` にし、`make task-index` を実行する。
+2. managed taskは status を `review` にし、`make task-index` を実行する。
 3. diffを分類する。
    - `migrations/` / `.sqlx/`
    - lock / transaction / retry / idempotency / run coordination
@@ -31,4 +31,3 @@ Task `$0` をレビューする。
 11. 設計そのものの矛盾なら `BLOCKED` + `status: blocked` として `/spec $0` へ戻す。
 12. `make task-index` を実行する。
 13. implementation code、test、migration、`.sqlx/` は編集しない。
-

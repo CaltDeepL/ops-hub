@@ -1,5 +1,5 @@
 ---
-id: "NN"
+id: "ID"
 slug: short-slug
 status: spec
 # planned -> spec -> implementing -> review -> fixing -> review -> done
@@ -7,7 +7,7 @@ status: spec
 depends_on: []
 ---
 
-# タスクNN：<タイトル>
+# タスクID：<タイトル>
 
 | 項目 | 内容 |
 |---|---|

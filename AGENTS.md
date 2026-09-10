@@ -12,7 +12,7 @@ Claude Code が仕様化・設計判断・レビューを担当し、Codex は�
 
 対象タスクを実装する前に、最低限次を読む。
 
-1. 対象の `docs/task-NN-*.md`
+1. 対象の `docs/task-ID-*.md`
 2. `docs/ai/PROJECT.md`
 3. `docs/ai/WORKFLOW.md`
 4. タスクから参照される ADR
@@ -115,7 +115,7 @@ make verify
 
 ## 実装完了時
 
-Task 07以降は task doc の `Implementation Record` を更新する。
+managed task（Q系列およびTask 07以降）は task doc の `Implementation Record` を更新する。
 
 - 変更ファイル
 - 実装上の判断
