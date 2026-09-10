@@ -1,11 +1,16 @@
 pub mod config;
 pub mod error;
 pub mod handler;
+pub mod repository;
 pub mod run_lock;
+pub mod service;
 pub mod state;
 pub mod trace_id;
 
-use axum::{Router, routing::get};
+use axum::{
+    Router,
+    routing::{get, post},
+};
 use tower_http::trace::TraceLayer;
 
 use crate::state::AppState;
@@ -18,6 +23,7 @@ pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(handler::health::health))
         .route("/livez", get(handler::livez::livez))
+        .route("/v1/runs", post(handler::runs::start_run))
         .layer(TraceLayer::new_for_http())
         // 後に足したレイヤほど外側。trace_id を最外に置くことで、
         // TraceLayer が出すログにもスパンの trace_id が載る
