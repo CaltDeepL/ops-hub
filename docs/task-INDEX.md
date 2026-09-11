@@ -14,7 +14,7 @@ Task 01〜06はlegacy task docsを変更せずDONE扱い。Q系列およびTask 
 | 05 | run-lock | DONE | [04] | RunLock / advisory lock | docs/Task_05_run lock.md | — |
 | 06 | runs-endpoint | DONE | [05] | POST /v1/runs 骨格 | docs/Task_06 post runs.md | — |
 | Q1 | ci-quality-gate | DONE | ["06"] | CI / Quality Gate 基盤 | docs/task-Q1-ci-quality-gate.md | — |
-| Q2 | main-branch-protection | BLOCKED | ["Q1"] | main branch protection | docs/task-Q2-main-branch-protection.md | — |
+| Q2 | main-branch-protection | APPROVED | ["Q1"] | main branch protection | docs/task-Q2-main-branch-protection.md | — |
 | Q3 | dependabot | NOT CREATED | [Q2] | Dependabot / dependency operations | — | — |
 | 07 | stale-lock-recovery | NOT CREATED | [06, Q3] | 取り残し lock 回収 + run入口仕様の仕上げ | — | — |
 | 08 | probe-masking | NOT CREATED | [07] | probe + masking | — | — |
