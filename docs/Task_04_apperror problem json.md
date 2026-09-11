@@ -4,7 +4,7 @@
 |---|---|
 | 上位ドキュメント | ops-hub-detail v1.0 3章（エラー設計）／ 10章 タスク4 |
 | 完了条件 | SQLSTATE分類のテストが通る。5xxで `trace_id` のみ返る |
-| ステータス | ユニットテスト22件 green（2026-09-05）。`x-request-id` の往復のみ未確認（api イメージの再ビルド待ち） |
+| ステータス | 完了（ユニットテスト22件 green、`x-request-id` の往復と DB停止時の503を実機確認） |
 
 > 実測（2026-09-05）：`cargo test` 22件すべて green。5章の「想定される修正点」で
 > 実際に踏んだのは clap の feature 不足のみで、sqlx 0.9 のバリアント名・`HeaderName::from_static`
@@ -91,7 +91,7 @@ docker compose start db
 ```
 
 実測（2026-09-05）：`cargo test` 22件 green。DB停止時の `/health` は 503 を返すことを確認済み。
-`x-request-id` の往復は、再ビルド後に確認する。
+再ビルド後に `x-request-id: manual-check-001` がそのまま返ることを確認済み。
 
 ## 7. 次タスクへの引き継ぎ
 
@@ -100,4 +100,3 @@ docker compose start db
 - 残る宿題1（Neonで `tcp_keepalives_idle` が設定できるか）はタスク5で確認する
 - `repository` 層を作り始めたら、`OnConstraint::is_unique_violation_on` を使って
   `outbox_dedupe_key` / `events_source_idempotency_key` の重複を握りつぶす（分類が `ExpectedDuplicate` のものは、ハンドラまで上げない）
-

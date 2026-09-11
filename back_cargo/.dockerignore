@@ -1,7 +1,0 @@
-/target
-.git
-.gitignore
-.env
-docs
-README.md
-compose.yaml

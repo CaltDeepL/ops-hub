@@ -20,7 +20,7 @@ test result: ok. 4 passed; 0 failed
 ```
 
 このタスクの途中で Neon と Render の作成も行い、詳細設計11章の宿題1〜3が閉じた（6章）。
-インフラの手順そのものは `docs/neon_setup.md` / `docs/render_setup.md` に分けた。
+インフラの手順そのものは `docs/neon-setup.md` / `docs/render-setup.md` に分けた。
 
 ---
 

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+subject="$(head -n 1 "$1")"
+pattern='^(feat|fix|docs|refactor|test|chore|ci|build|perf|style|revert)(\([a-zA-Z0-9._/-]+\))?!?: .+'
+
+if [[ "$subject" == Merge\ * || "$subject" == Revert\ * ]]; then
+  exit 0
+fi
+
+if [[ ! "$subject" =~ $pattern ]]; then
+  echo "コミット件名が Conventional Commits 形式ではありません。" >&2
+  echo "例: feat(runs): recover stale advisory lock" >&2
+  exit 1
+fi
