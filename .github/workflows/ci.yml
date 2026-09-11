@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_USER: ops_hub
+          POSTGRES_PASSWORD: ops_hub
+          POSTGRES_DB: ops_hub
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ops_hub -d ops_hub"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: back_cargo -> target
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install sqlx-cli
+        uses: taiki-e/install-action@5bf6ce016fd2e72eefc647cbca1e4213f65955b8 # v2.87.5
+        with:
+          tool: sqlx-cli@0.9
+
+      - name: Run migrations
+        working-directory: back_cargo
+        env:
+          DATABASE_URL: postgres://ops_hub:ops_hub@localhost:5432/ops_hub
+        run: cargo sqlx migrate run
+
+      - name: Verify
+        env:
+          DATABASE_URL: postgres://ops_hub:ops_hub@localhost:5432/ops_hub
+        run: make verify
