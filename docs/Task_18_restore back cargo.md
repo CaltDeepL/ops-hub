@@ -1,4 +1,4 @@
-# Task 08: back_cargo の復元
+# Task 18: back_cargo の復元(旧採番#8から繰り上げ)
 
 ## 1. 背景・目的
 
@@ -37,12 +37,12 @@ git checkout 3269cb7 -- back_cargo
 
 ## 4. 適用手順
 
-同梱の `task-08-restore-back-cargo.patch` を使う場合:
+同梱の `task-18-restore-back-cargo.patch` を使う場合:
 
 ```bash
 cd ~/A/ops-hub   # 実際のパスに置き換え
-git am task-08-restore-back-cargo.patch
-# コミット者情報がダミー(Claude (task-08 draft))なので、必要なら
+git am task-18-restore-back-cargo.patch
+# コミット者情報がダミー(Claude (task-18 draft))なので、必要なら
 git commit --amend --reset-author
 ```
 
@@ -73,6 +73,6 @@ cat .github/workflows/security-audit.yml
 ## 6. 次タスクへの引き継ぎ
 
 - back_cargo復元後、`security-audit.yml` の `working-directory: back_cargo` 参照は解決するはずだが、実際にCIを走らせて確認していない。次タスクでの確認が必要。
-- task-07で書いた通り、ci.ymlはまだ setup のみで実質的な検証（`cargo fmt --check` / `clippy -D warnings` / `cargo test`、フロントの `npm run lint` / `npm run build`）を行っていない。back_cargo復元後、ci.ymlにこれらのステップを追加するのが次(task-09想定)。
+- task-17で書いた通り、ci.ymlはまだ setup のみで実質的な検証を行っていない。back_cargo復元後、タスク19でAI協働フレームワークの残骸(check_task_docs.py/update_task_index.py)を削除し、タスク20でci.ymlにmake verifyを組み込む。
 - Dependabot（`.github/dependabot.yml`）、Ruleset差分（`strict required status checks` / `review thread resolution` / `unattributed changesへの追加approval`）は未着手のまま。
 - `4e6802f`のようなマージ事故を再発させないため、`main-protection` Ruleset の `strict required status checks` を有効化する（期待値では `false` になっているが、これ自体を見直す価値があるかもしれない）。
