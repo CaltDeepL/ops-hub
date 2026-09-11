@@ -1,7 +1,0 @@
-# ops-hub project-local Codex settings.
-# モデル名は固定しない。Codex側の現行モデル更新に追従する。
-model_reasoning_effort = "high"
-
-# 実装担当なのでrepository内は書き込み可。外側や追加権限は都度確認する。
-sandbox_mode = "workspace-write"
-approval_policy = "on-request"
