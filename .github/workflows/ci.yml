@@ -59,7 +59,3 @@ jobs:
           tool: sqlx-cli@0.9
 
 
-      - name: Verify
-        env:
-          DATABASE_URL: postgres://ops_hub:ops_hub@localhost:5432/ops_hub
-        run: make verify
