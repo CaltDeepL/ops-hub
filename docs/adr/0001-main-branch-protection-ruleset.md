@@ -39,6 +39,7 @@ main保護の正本はRuleset 1件のみとし、次の最小ルール集合に�
         "require_code_owner_review": false,
         "require_last_push_approval": false,
         "required_review_thread_resolution": false,
+        "require_extra_approval_for_unattributed_changes": false,
         "allowed_merge_methods": ["merge", "squash", "rebase"]
       }
     },
@@ -61,6 +62,7 @@ main保護の正本はRuleset 1件のみとし、次の最小ルール集合に�
 3. `strict_required_status_checks_policy` は `false` に固定し、これと`.github/workflows/ci.yml`のpush(main) concurrencyをcommit単位に分離する変更（Q2 DD-8）を**セットの判断**として維持する。mainがrebase必須（strict）にならない代わりに、push(main)ごとの`verify` runをcancelさせず、post-merge検証signal（semantic merge conflictの検出）を保全する。
 4. required status checkのcontextは `verify` のみとする。`cargo audit`（`security-audit.yml`）はrequired checkにしない（Q1からの継続）。
 5. Ruleset本体の作成・変更・削除はCodex・Claude Codeのいずれも実行しない。admin権限のtokenを取得・要求・保存しない。実際の適用は人間が行い、Claude Codeは無認証GETによる独立検証のみを担う。
+6.（fix cycle 1で追記）`pull_request.parameters.require_extra_approval_for_unattributed_changes` は `false` に固定する。GitHub側の既定値は `true` であり、有効化されるとPR内に作者へ帰属できないcommitがある場合に追加approvalを要求する。これは決定4の「approval 0」不変条件と同じ単独開発者制約から生じる別経路のデッドロックであり、レビューで検出された（Q2 fix cycle 1、reviewer-critical）。
 
 ## Consequences
 

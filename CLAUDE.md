@@ -1,100 +1,59 @@
-# ops-hub — Claude Code 運用ルール
+# ops-hub — Claude Code 運用ルール v3
 
-## 役割分担
+共通ルールの正本は `AGENTS.md`。Claude Code は Architect / Context Compiler として仕様化と独立reviewを担当し、実リポジトリへの実装はCodexへ渡す。
 
-Claude Code は **仕様化・設計・レビュー・障害解析** を担当する。
-Codex は **実装・レビュー指摘修正** を担当する。
-
-標準フロー:
+## 標準フロー
 
 ```text
 /spec ID
-  ↓
+  ↓ Claude: DRAFTを作成
+Human Gate
+  ↓ Human: APPROVED
 /impl ID
-  ↓ Codex
+  ↓ Codex: IMPLEMENTED
 /review ID
-  ├─ READY → 人間がcommit
-  └─ CHANGES REQUESTED → /fix ID → Codex → /review ID
+  ├─ READY → Humanがcommit/pushしDONE
+  ├─ FIX → statusはIMPLEMENTEDのまま /fix ID
+  └─ BLOCKED → Human/architect判断
 ```
 
-`ID` にはQ系列（例: `Q1`）またはTask 07以降の数値系列（例: `07`）を指定する。
+`DRAFT → APPROVED`と`READY → DONE`はHumanだけ、`APPROVED → IMPLEMENTED`はCodexだけ、`IMPLEMENTED → READY`はClaudeだけが行う。
 
-Claude Code と Codex に同じworking treeを同時編集させない。
+## `/spec` の成果物
 
-## 正本
+- `docs/task-ID-*.md`: Goal / Scope / Out of Scope / Invariants / Files / Required Tests / Acceptance Criteria / Design Decisions / Likely Pitfalls / Verifyを具体化する。
+- `docs/commits/task-ID.txt`: Humanが使う推奨commit message。Claude/Codexはcommitしない。
+- `MANIFEST.md`: 変更予定pathと目的だけを記す一時ファイル。正しさの基準ではなく、原則commitしない。
+- `implementation/`: 新規・自己完結・弱結合で既存参照が2〜3箇所以内の場合だけ作成可。未検証の提案であり、Codexは破棄・再実装してよい。
 
-- 16タスク全体: `docs/implementation-plan.md`
-- AI向け現在状態: `docs/ai/PROJECT.md`
-- handoff規約: `docs/ai/WORKFLOW.md`
-- managed taskの作業契約: `docs/task-ID-*.md`
-- 長期的な設計理由: `docs/adr/`
+HumanはGoal / Scope / Out of Scope、Invariants、Acceptance Criteria、MANIFESTの変更範囲を確認してからstatusを`APPROVED`へ変更する。Claudeは自分で承認しない。
 
-Task 01〜06 の既存文書へ機械管理用frontmatterを後付けしない。
+## Review
 
-## Agent routing
+Humanから次の順で渡された材料をdiff-firstで照合する。
 
-### architect — Opus
+1. Human承認済みAcceptance Criteria
+2. 実際のdiff
+3. Required Testsと実行結果
+4. Invariants
+5. Implementation Recordの`make verify`証拠
+6. task docのDesign Decisions
+7. 判断不能時だけ該当ADR・上位設計の必要箇所
 
-次を含む設計で使う。
+Claude生成コードやMANIFESTを正解として循環参照しない。判定は`READY / FIX / BLOCKED`のみ。FIXではstatusを変更せず、READYの場合だけ`IMPLEMENTED → READY`にする。Human ACをAIが完了扱いにしない。
 
-- migration / schema
-- advisory lock / transaction / concurrency
-- incident状態遷移
-- idempotency / outbox
-- API互換性
-- CI / deployment / failure domain
+## 読み取りとagent routing
 
-read-only agent。実装ファイルを書かせない。
+通常は対象task、MANIFEST、diff、対象コード・testだけを読む。`PROJECT.md`、`WORKFLOW.md`、全ADR、全設計文書を最初から読まない。L1/L2/L3の条件は`AGENTS.md`に従う。
 
-### reviewer — Sonnet
+- architect: migration/schema、concurrency、状態遷移、idempotency、API互換性、CI/failure domainの設計整理。read-only。
+- reviewer: 通常diffの独立review。read-only。
+- reviewer-critical: migration、lock/transaction/idempotency、重要な状態遷移、BLOCKER再確認。read-only。
+- debugger: compile/test/SQLx/PostgreSQL/Docker/runtime/CIの原因調査。read-only。
 
-通常の実装diffレビュー。
-read-only agent。
+## 品質・安全境界
 
-### reviewer-critical — Opus
-
-次の場合に使用する。
-
-- `migrations/` を含む
-- lock / concurrency / transaction / idempotency の意味が変わる
-- incident状態遷移の不変条件が変わる
-- Sonnet reviewer が BLOCKER を出した
-
-### debugger — Sonnet
-
-compile/test/SQLx/PostgreSQL/Docker/runtime/CI の原因調査。
-read-only agent。
-
-## チェックリストの分岐
-
-reviewer本体に全ルールを詰め込まない。
-
-diffに応じて読む。
-
-- migration / `.sqlx/` → `docs/ai/checklists/migration.md`
-- lock / retry / transaction / run coordination → `docs/ai/checklists/concurrency.md`
-- incident / liveness / dead-man → `docs/ai/checklists/incident.md`
-- HTTP API → `docs/ai/checklists/api.md`
-
-## 最終検証
-
-最終品質ゲートは1つだけ。
-
-```bash
-make verify
-```
-
-個別コマンドを「同等」と解釈して代用しない。
-
-## DB / secrets
-
-- Neon本番DBへ接続しない。
-- `.env` / `.env.*` の秘密情報を読まない。
-- 本番URL、token、Slack Webhookをログやtask docへ貼らない。
-- 権限制約を回避するコマンドを組み立てない。
-
-## Git
-
-通常フローでcommit/push/rebaseを行わない。
-
-review dispositionがREADY、task statusがdone、`make verify`証拠が揃った後に人間がコミットする。
+- 最終品質ゲートは`make verify`。`make audit`は別の依存脆弱性検査。
+- SQLx/DB操作はMake targetとlocal DB guard経由だけ。直接SQLx、`psql`、CLIでの`DATABASE_URL`上書きを行わない。
+- `.env`やsecretを読まない。本番DBへ接続しない。
+- commit/push/rebase/reset/clean/tag/release/merge/deployを行わない。

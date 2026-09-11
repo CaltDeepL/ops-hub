@@ -12,6 +12,16 @@ dist
 dist-ssr
 *.local
 
+# Python tooling caches
+__pycache__/
+*.py[cod]
+
+# Claudeの一時handoff成果物（恒久成果物はtask docと実コード）。
+/MANIFEST.md
+/implementation/
+/docs/ai/CONTRACT.md
+/docs/ai/*.legacy.md
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

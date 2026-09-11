@@ -67,6 +67,70 @@ def subset_differences(desired: Any, live: Any, path: str = "$") -> list[str]:
     return []
 
 
+def exact_array_differences(desired: Any, live: Any, path: str) -> list[str]:
+    if not isinstance(desired, list) or not isinstance(live, list):
+        return [
+            f"{path}: exact array comparison requires arrays; "
+            f"desired {type(desired).__name__}, live {type(live).__name__}"
+        ]
+    if desired == live:
+        return []
+    return [
+        f"{path}: exact mismatch; "
+        f"desired {json.dumps(desired, ensure_ascii=False, sort_keys=True)}, "
+        f"live {json.dumps(live, ensure_ascii=False, sort_keys=True)}"
+    ]
+
+
+def exact_set_differences(
+    desired: set[str], live: set[str], path: str
+) -> list[str]:
+    differences: list[str] = []
+    missing = sorted(desired - live)
+    unexpected = sorted(live - desired)
+    if missing:
+        differences.append(f"{path}: missing values {missing!r}")
+    if unexpected:
+        differences.append(f"{path}: unexpected live values {unexpected!r}")
+    return differences
+
+
+def rule_types(rules: Any) -> set[str]:
+    if not isinstance(rules, list):
+        return set()
+    return {
+        rule_type
+        for rule in rules
+        if isinstance(rule, dict)
+        and isinstance((rule_type := rule.get("type")), str)
+    }
+
+
+def required_status_contexts(rules: Any) -> set[str]:
+    if not isinstance(rules, list):
+        return set()
+
+    contexts: set[str] = set()
+    for rule in rules:
+        if not isinstance(rule, dict) or rule.get("type") != "required_status_checks":
+            continue
+        parameters = rule.get("parameters")
+        checks = (
+            parameters.get("required_status_checks")
+            if isinstance(parameters, dict)
+            else None
+        )
+        if not isinstance(checks, list):
+            continue
+        contexts.update(
+            context
+            for check in checks
+            if isinstance(check, dict)
+            and isinstance((context := check.get("context")), str)
+        )
+    return contexts
+
+
 def fail(messages: list[str]) -> int:
     print("main Ruleset verification failed:", file=sys.stderr)
     for message in messages:
@@ -144,6 +208,9 @@ def main() -> int:
             differences + [f"GitHub Ruleset detail response could not be read: {error}"]
         )
 
+    if not isinstance(ruleset_detail, dict):
+        return fail(differences + ["GET /rulesets/{id} did not return an object"])
+
     differences.extend(
         subset_differences(desired, ruleset_detail, "$.ruleset")
     )
@@ -158,6 +225,21 @@ def main() -> int:
             desired.get("rules", []),
             rules_from_matching_ruleset,
             "$.main.rules",
+        )
+    )
+    desired_rules = desired.get("rules")
+    differences.extend(
+        exact_set_differences(
+            rule_types(desired_rules),
+            rule_types(rules_from_matching_ruleset),
+            "$.main.rules[].type",
+        )
+    )
+    differences.extend(
+        exact_set_differences(
+            required_status_contexts(desired_rules),
+            required_status_contexts(rules_from_matching_ruleset),
+            "$.main.required_status_checks[].context",
         )
     )
 

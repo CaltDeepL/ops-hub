@@ -1,4 +1,6 @@
-# migration / SQLx レビューチェックリスト
+# migration / SQLx レビューチェックリスト（非推奨・通常導線外）
+
+共通review基準は`AGENTS.md`とtask docに統合済み。この文書は過去参照の互換用。
 
 対象: `migrations/`, schema変更, `.sqlx/`, SQLx compile-time query変更。
 

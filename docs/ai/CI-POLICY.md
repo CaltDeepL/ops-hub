@@ -39,6 +39,15 @@ CI側のPostgreSQL公開portが5432なら、そのCI用DATABASE_URLを使って�
 
 Q1で固定した `make verify` を、ローカルとコード品質CIで共通の最終ゲートとして呼ぶ。
 
+検証内容は削らず、成功時のAI/CIログだけをcommand・exit code・PASS・必要最小限の最終行へ圧縮する。失敗時は原因周辺を展開する。
+
+依存脆弱性検査は引き続き別ゲートとする。
+
+```text
+make verify = 実装品質
+make audit  = 現在の依存脆弱性
+```
+
 ## Q2 main branch protection
 
 `main` への変更はPR経由のみにし、required status checkは `verify` のみとする。`audit` はrequired checkにしない。

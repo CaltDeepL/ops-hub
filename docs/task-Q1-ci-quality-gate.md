@@ -2,7 +2,7 @@
 
 id: "Q1"
 slug: ci-quality-gate
-status: done
+status: DONE
 depends_on: ["06"]
 ---
 
@@ -20,10 +20,7 @@ depends_on: ["06"]
 状態遷移:
 
 ```text
-planned -> spec -> implementing -> review -> fixing -> review -> done
-
-設計矛盾時:
-blocked -> spec
+DRAFT -> APPROVED -> IMPLEMENTED -> READY -> DONE
 ```
 
 ---
