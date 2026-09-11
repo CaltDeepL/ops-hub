@@ -61,5 +61,9 @@ jobs:
         with:
           tool: sqlx-cli@0.9
 
+      - name: Run database migrations
+        working-directory: back_cargo
+        run: cargo sqlx migrate run
+
       - name: Verify
         run: make verify
