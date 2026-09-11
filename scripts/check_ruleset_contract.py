@@ -37,6 +37,25 @@ def yaml_scalar(raw: str) -> str:
     return value
 
 
+def job_name(jobs_block: str, job_id: str) -> str | None:
+    """jobs.<job_id>.name を取得する。"""
+
+    job_match = re.search(
+        rf"(?ms)^  {re.escape(job_id)}:\s*(?:#.*)?\n"
+        rf"(.*?)(?=^  [A-Za-z0-9_-]+:\s*(?:#.*)?\n|\Z)",
+        jobs_block,
+    )
+    if job_match is None:
+        return None
+
+    job_block = job_match.group(1)
+    name_match = re.search(r"(?m)^    name:\s*(.+?)\s*$", job_block)
+    if name_match is None:
+        return None
+
+    return yaml_scalar(name_match.group(1))
+
+
 def required_contexts(ruleset: object) -> tuple[set[str], list[str]]:
     errors: list[str] = []
     if not isinstance(ruleset, dict):
@@ -73,7 +92,9 @@ def required_contexts(ruleset: object) -> tuple[set[str], list[str]]:
                 f"required_status_checks[{index}].context must be a non-empty string"
             )
             continue
+
         contexts.add(context)
+
     return contexts, errors
 
 
@@ -91,13 +112,19 @@ def main() -> int:
     try:
         ci_text = args.ci.read_text(encoding="utf-8")
     except OSError as error:
-        print(f"ruleset contract check failed: cannot read CI workflow: {error}", file=sys.stderr)
+        print(
+            f"ruleset contract check failed: cannot read CI workflow: {error}",
+            file=sys.stderr,
+        )
         return 1
 
     try:
         ruleset = json.loads(args.ruleset.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
-        print(f"ruleset contract check failed: cannot load Ruleset JSON: {error}", file=sys.stderr)
+        print(
+            f"ruleset contract check failed: cannot load Ruleset JSON: {error}",
+            file=sys.stderr,
+        )
         return 1
 
     contexts, context_errors = required_contexts(ruleset)
@@ -110,10 +137,22 @@ def main() -> int:
     else:
         job_names = {
             yaml_scalar(match.group(1))
-            for match in re.finditer(r"(?m)^    name:\s*(.+?)\s*$", jobs_block)
+            for match in re.finditer(
+                r"(?m)^    name:\s*(.+?)\s*$",
+                jobs_block,
+            )
         }
+
         if not job_names:
             errors.append("CI workflow has no jobs.*.name values")
+
+        verify_name = job_name(jobs_block, "verify")
+        if verify_name is None:
+            errors.append("CI workflow has no jobs.verify.name")
+        elif verify_name != "verify":
+            errors.append(
+                f"jobs.verify.name must be 'verify', got {verify_name!r}"
+            )
 
     missing_contexts = sorted(contexts - job_names)
     if missing_contexts:
@@ -127,7 +166,12 @@ def main() -> int:
         errors.append("CI workflow has no top-level on block")
     else:
         forbidden = sorted(
-            set(re.findall(r"(?m)^\s+(paths(?:-ignore)?):\s*", on_block))
+            set(
+                re.findall(
+                    r"(?m)^\s+(paths(?:-ignore)?):\s*",
+                    on_block,
+                )
+            )
         )
         if forbidden:
             errors.append(
@@ -143,7 +187,9 @@ def main() -> int:
 
     print(
         "ruleset contract check passed: "
-        f"contexts={sorted(contexts)}, no paths/paths-ignore triggers"
+        f"contexts={sorted(contexts)}, "
+        "jobs.verify.name='verify', "
+        "no paths/paths-ignore triggers"
     )
     return 0
 
