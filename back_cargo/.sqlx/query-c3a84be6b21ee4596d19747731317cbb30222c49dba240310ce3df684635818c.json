@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE runs\n        SET status          = 'completed',\n            finished_at     = now(),\n            targets_checked = $2\n        WHERE id = $1\n          AND status = 'running'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c3a84be6b21ee4596d19747731317cbb30222c49dba240310ce3df684635818c"
+}
