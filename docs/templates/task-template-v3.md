@@ -1,153 +1,119 @@
 ---
 id: "ID"
 slug: short-slug
-status: spec
-# planned -> spec -> implementing -> review -> fixing -> review -> done
-# 設計矛盾時: blocked -> spec
+status: DRAFT
 depends_on: []
 ---
 
-# タスクID：<タイトル>
+# Task ID：<タイトル>
 
-| 項目 | 内容 |
-|---|---|
-| 上位ドキュメント | <要件/基本設計/詳細設計の章> |
-| ゴール | <このtaskで1つだけ達成する結果> |
-| 完了条件 | <最重要の観測可能な完了条件> |
-| 実装範囲外 | <明示的non-goals> |
+## Goal
 
-## 1. Context / 現状
+<このtaskで達成する観測可能な結果。>
 
-<直前タスクから何が存在し、何がまだ無いか。>
+## Scope
 
-## 2. Acceptance Criteria
+- <今回変更する機能・範囲。>
 
-- [ ] AC-1: <観測・テスト可能>
-- [ ] AC-2: <観測・テスト可能>
-- [ ] AC-3: <failure path>
+## Out of Scope
 
-## 3. 設計判断・不変条件
+- <今回変更しない機能・設定。>
 
-- DD-1: <Codexが変更してはいけない設計判断>
-- DD-2: <不変条件>
+## Invariants
 
-必要なら処理順を書く。
+- <壊してはいけない既存仕様。>
+- productionの`DATABASE_URL`を使用しない。
 
-```text
-request
-  ↓
-...
-```
+## Files
 
-## 4. 想定変更箇所
+### Modify
 
-- `<path>` — <役割>
+- `<実在するrepository/path>` — <変更目的>
 
-ファイル名の微調整は許容するが、DD-* を変える必要が出た場合は Spec Deviations を使う。
-
-## 5. DB / migration / SQLx
-
-<変更なし、またはmigration/constraint/backfill/.sqlxの扱い。>
-
-## 6. API / 互換性
-
-<status/body/auth/backward compatibility。>
-
-## 7. ADR
+### Add
 
 - なし。
 
-または
+## Required Tests
 
-- `docs/adr/NNNN-*.md`
+- <実装すべき成功ケース。>
+- <実装すべきfailure / concurrency / boundaryケース。>
 
-## 8. Spec Deviations
+## Acceptance Criteria
 
-実装中に DD-* と矛盾する判断が必要になった場合、コードを書く前に「何を・なぜ」をここへ記録し、`status: blocked` にして停止する。Claude architectが設計を更新するまで再開しない。
+### Codex
 
-- なし。
+- [ ] AC-1: <コード・設定・testで実証可能な条件。>
+- [ ] AC-2: Required Testsが存在し、成功する。
+- [ ] AC-3: `make verify`が成功する。
 
-## 9. 検証
-
-反復用の狭い検証:
-
-```bash
-<必要なtestだけ>
-```
-
-最終品質ゲート:
-
-```bash
-make verify
-```
-
-## 10. Implementation Record
-
-_Codexが実装完了時に更新する。_
-
-### 変更ファイル
-
-- 
-
-### 実装上の判断
-
-- 
-
-### DB / APIへの影響
-
-- 
-
-### Verification evidence
-
-```text
-make verify
-<実際の終了結果と、必要な範囲の出力>
-```
-
-### 残課題
+### Human — Immediate
 
 - なし。
 
-## 11. Review Record
+### Human — Deferred
 
-_Claude Code親セッションがread-only reviewerの結果を転記する。_
+- なし。
 
-### Verification
+<!-- 遅延確認がある場合:
+Due: within 7 days
 
-- [ ] `make verify` の実際の成功結果を確認した。
-- [ ] 全Acceptance Criteriaを具体的diff/test証拠へ対応付けた。
+- [ ] AC-4: <時間経過後にHumanが確認する条件。>
+-->
 
-### Acceptance evidence
+## Design Decisions
 
-| Criterion | Evidence (`file:line` / test / command) |
-|---|---|
-| AC-1 | |
-| AC-2 | |
-| AC-3 | |
+- DD-1: <実装に必要な決定。>
 
-### Findings
+## Likely Pitfalls
 
-| ID | Severity | File:line | 失敗シナリオ / 指摘 | 必要な修正 | 根拠 |
-|---|---|---|---|---|---|
-| — | — | — | — | — | — |
+- <誤実装しやすい点と回避条件。>
 
-### Review disposition
+## Reproduction / Verify
 
-- [ ] BLOCKED
-- [ ] CHANGES REQUESTED
-- [ ] READY
+- `<狭いtest command>`
+- `make verify`
+- `make audit`（必要な場合だけ。`make verify`の代用ではない）
 
-## 12. つまずいた点と教訓
+## Spec Deviations
 
-<実装時に発生した問題と、次回再発防止になる知識。>
+- なし。
 
-## 13. 次タスクへの引き継ぎ
+Invariants/AC/Scopeと衝突する、またはL2でも仕様が一意にならない場合は「何を・なぜ」を記録し、`BLOCKED`として停止する。
 
-<次のtaskが知るべき確定事項。>
+## Implementation Record
 
-## 14. 再現コマンド
+Changed:
+- 未実装。
 
-```bash
-export DATABASE_URL="postgres://ops_hub:ops_hub@localhost:5433/ops_hub"
-make verify
-```
+Decision:
+- 未実装。
+
+Impact:
+- API: 未確認
+- DB: 未確認
+- Migration: 未確認
+- SQLx: 未確認
+
+Verify:
+- `make verify`: NOT RUN
+- `make audit`: not required
+
+Remaining:
+- Codex implementation。
+
+## Review Record
+
+Verdict: NOT REVIEWED
+
+Evidence:
+- なし。
+
+Findings:
+- なし。
+
+## Handoff
+
+- Branch: `<type/short-slug>`
+- Commit message file: `docs/commits/task-ID.txt`
+- Next: Human Gateで承認後、`/impl ID`。

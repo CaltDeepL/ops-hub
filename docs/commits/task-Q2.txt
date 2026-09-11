@@ -1,0 +1,1 @@
+chore(github): protect main with repository ruleset

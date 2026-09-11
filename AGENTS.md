@@ -1,32 +1,80 @@
-# ops-hub — Codex 実装ルール
+# ops-hub — Codex 実装ルール v3
 
-## 役割
+## 役割と正本
 
-Codex は ops-hub の **実装担当** とする。
+開発主体はHumanとする。
 
-Claude Code が仕様化・設計判断・レビューを担当し、Codex は承認済み task doc を最小差分で実装する。
+- Human: Owner。優先順位、仕様承認、Git履歴、GitHub設定、merge
+- Claude: Architect / Context Compiler。設計整理、task doc作成、review
+- Codex: Implementation Engine。実リポジトリへの適用、修正、test、検証
+- CI: Mechanical Quality Gate
+- GitHub Ruleset: Repository Protection
 
-「より良い設計を思いついた」という理由だけで、承認済み設計を変更してはならない。
+Claudeは実リポジトリへ直接アクセスできない前提とし、Claude生成コードや`implementation/`は未検証の提案として扱う。実装判断の優先順位は次のとおり。
 
-## 作業前に読む順番
+```text
+Human承認済みAcceptance Criteria
+  ↓
+Invariants
+  ↓
+実リポジトリ
+  ↓
+Required Tests
+  ↓
+task docのDesign Decisions
+  ↓
+Claude生成コード
+```
 
-対象タスクを実装する前に、最低限次を読む。
+Claude生成コードが実リポジトリと衝突した場合は破棄してよい。「より良い設計」を理由に承認済み仕様を変更しない。
 
-1. 対象の `docs/task-ID-*.md`
-2. `docs/ai/PROJECT.md`
-3. `docs/ai/WORKFLOW.md`
-4. タスクから参照される ADR
-5. 対象コード、テスト、migration、関連設定
-6. 必要な場合のみ上位設計文書
+## 読み取り範囲
 
-設計文書の優先順位は既存 `docs/implementation-plan.md` に従う。
+通常は次だけを読む。
 
-1. 要件定義 v0.2
-2. 基本設計 v1.0
-3. 詳細設計 v1.0
-4. 要件定義 v0.1 は旧版
+```text
+Status: APPROVEDのtask doc
++ MANIFEST.md（存在する場合。未検証の一時成果物）
++ task docのFilesにある変更対象
++ 関連テスト
+```
 
-ただし、詳細設計が基本設計を明示的に修正している箇所は詳細設計を優先する。
+`PROJECT.md`、`WORKFLOW.md`、全ADR、`implementation-plan.md`、要件・設計全文を毎回再読しない。
+
+必要情報が足りない場合だけ、次の順で段階的に広げる。
+
+- L0: approved task doc + MANIFEST + 対象コード + 対象テスト。通常はここで実装する。
+- L1: 変更対象の呼び出し元、関連テスト、直接依存module。compile/interface/既存test確認に必要な場合だけ読む。
+- L2: 該当ADR、詳細設計、必要な上位設計の該当箇所。Invariantsとの衝突やAPI/DB/concurrency判断が必要な場合だけ読む。到達理由をSpec DeviationsまたはImplementation Recordへ残す。
+- L3: L2でも仕様が一意でない、設計変更・scope拡大・production/secret/GitHub管理設定操作が必要な場合。自律判断せず停止してClaude architectまたは人間へ戻す。
+
+MANIFESTとClaude生成コードは正しさの基準ではない。矛盾時はAcceptance Criteria、Invariants、実リポジトリを優先する。
+
+## Statusと変更主体
+
+語彙は`DRAFT / APPROVED / IMPLEMENTED / READY / DONE / BLOCKED`だけを使う。
+
+```text
+DRAFT --Human only--> APPROVED
+APPROVED --Codex only--> IMPLEMENTED
+IMPLEMENTED --Claude only--> READY
+READY --Human only--> DONE
+```
+
+- DRAFT: Claudeが仕様を生成した状態
+- APPROVED: Human Gate通過済み。Codexが自律実装してよい
+- IMPLEMENTED: Required Testsと`make verify`が成功し、Codex実装が完了
+- READY: Claude review通過済み
+- DONE: Humanがcommit/pushを完了
+- BLOCKED: 設計判断、人間操作、安全境界により停止
+
+Claude/CodexはHuman専用遷移を行わない。Claude reviewのFIXではstatusをIMPLEMENTEDのままCodexへ戻す。設計問題はBLOCKEDにできる。
+
+## Human Gateと成果物
+
+Humanが承認する対象は、Goal / Scope / Out of Scope、Invariants、Acceptance Criteria、MANIFESTの変更範囲だけ。Claudeは`docs/task-ID-*.md`、`docs/commits/task-ID.txt`、一時`MANIFEST.md`を作る。`implementation/`は条件を満たす場合だけの未検証候補で、MANIFESTとともに原則commitしない。
+
+Claudeが`implementation/`を作ってよいのは、新規ファイル中心、既存参照2〜3箇所以内、必要なsignatureが提示済み、自己完結、結合が弱い場合だけ。既存service/repository/handler/state、concurrency、advisory lock、複数module変更では作らずCodexが実リポジトリへ直接実装する。
 
 ## 現在の実装基準
 
@@ -49,12 +97,23 @@ Task 07 では次を壊さない。
 
 ## Spec Deviations — 最重要ルール
 
-実装に必要な変更が task doc の `設計判断・不変条件` と矛盾する場合、**コードで勝手に解決しない**。
+Invariants、Acceptance Criteria、Out of Scope、または実リポジトリの設計前提と衝突する場合、**コードで勝手に解決しない**。
 
-1. task doc の `## Spec Deviations` に「何を変える必要があるか」「なぜか」を記録する。
-2. その設計変更に依存する実装を止める。
-3. task status を `blocked` にする。
-4. Claude architect が仕様を更新するまで再開しない。
+1. L2まで必要な箇所を確認する。
+2. 単純な名前・型・signature差分で、対応する概念が実在する場合だけ実リポジトリへ適応する。
+3. 設計前提の不一致ならtask docの`Spec Deviations`へ「何を変える必要があるか」「なぜか」を記録する。
+4. その経路の実装を止め、statusを`BLOCKED`にする。
+5. 次の短い形式でHuman/Claudeへ返す。
+
+```text
+BLOCKED: <理由>
+Attempted:
+- <試した内容>
+Conflict:
+- <Invariants / AC / scopeとの衝突>
+Required decision:
+- <必要な判断>
+```
 
 設計の黙示的変更は禁止。
 
@@ -74,6 +133,9 @@ Task 07 では次を壊さない。
 - `NOT NULL` 追加、DROP/RENAME、型縮小などの破壊的変更は、task doc に段階適用・backfill・互換性を明記してから実装する。
 - migration や `query!` / `query_as!` 等を変更し SQLx metadata が変わる場合は `.sqlx/` を更新し、差分へ含める。
 - `.sqlx/` 更新用コマンドは `make sqlx-prepare` を使う。
+- `cargo sqlx prepare`、`cargo sqlx migrate`、`sqlx migrate`、`psql`を直接実行しない。
+- `DATABASE_URL=...`をコマンドラインや一時環境変数で上書きしてDBコマンドを実行しない。
+- DB操作はMakefile → local DB guard → SQLxの経路だけを使う。
 - 複数のDB更新が同一不変条件を構成する場合は transaction に含める。
 - 排他・冪等性はアプリの偶然ではなく、DB制約・transaction・lock の適切な層で担保する。
 
@@ -91,13 +153,9 @@ Claude/Codexによる実装・テスト・SQLx metadata生成では Neon 本番D
 
 最終検証は、既存ローカルDocker DBなど許可されたホストのみを使用する。
 
-標準例:
-
-```bash
-export DATABASE_URL="postgres://ops_hub:ops_hub@localhost:5433/ops_hub"
-```
-
 `make verify` / `make sqlx-prepare` はホストを検査し、非ローカルDBを拒否する。
+
+許可接続先はlocalhost、127.0.0.1、::1、または明示されたlocal Docker DBだけ。安全性を判断できなければ実行しない。
 
 `.env` の秘密情報を読んで回避してはならない。
 
@@ -113,23 +171,31 @@ make verify
 
 `make verify` が実際に成功していないのに「検証済み」「green」と書かない。
 
+成功ログはcommand、exit code、PASS、必要最小限の最終行だけを残す。失敗時だけエラー本体と原因周辺を展開する。依存脆弱性検査は`make audit`として分離し、`make verify`の代用にしない。
+
 ## 実装完了時
 
-managed task（Q系列およびTask 07以降）は task doc の `Implementation Record` を更新する。
+Status: APPROVEDのtaskだけを実装する。compile/lint/test失敗は通常の停止理由ではなく、scope内で修正可能なら自律修正する。同一原因への修正を3回試しても解決しなければBLOCKEDとする。
 
-- 変更ファイル
-- 実装上の判断
-- migration / API影響
-- `make verify` の実際の結果
-- 制約・残課題
+実装完了条件は、approved task doc準拠、Required Tests存在、Invariants維持、`make verify` PASS、scope外差分なし、Implementation Record更新済み。すべて満たした場合だけstatusを`IMPLEMENTED`にする。
 
-Acceptance Criteria は、実際に満たした項目だけ `[x]` にする。
+Implementation RecordはChanged / Decision / Impact / Verify / Remaining形式で短く更新する。
+
+Acceptance Criteriaは`Codex`セクションのうち実際に満たした項目だけ`[x]`にする。`Human — Immediate`と`Human — Deferred`をAIが`[x]`にしない。
 
 Claude の `Review Record` や READY 判定は書き換えない。
 
+## 自律修正の禁止
+
+- 既存テスト削除、`#[ignore]`、assert削除・緩和、Required Tests変更、failure握り潰し
+- Invariants、AC、API/DB設計、locking/retry/timeout/security semanticsの変更
+- Out of Scope、別task、dependency更新、将来用抽象化、layer再設計
+
+これらが必要になった時点でBLOCKEDとする。
+
 ## Git操作
 
-通常フローでは次を行わない。
+`git status`、`git diff`、`git log`、`git show`などのread-only操作は行ってよい。通常フローでは次を行わない。
 
 - `git commit`
 - `git commit --amend`
@@ -137,6 +203,9 @@ Claude の `Review Record` や READY 判定は書き換えない。
 - `git push`
 - `git reset --hard`
 - `git clean -fd`
+- `git tag`
+- release
+- merge
 - deploy
 
 READY後のコミットは人間が行う。

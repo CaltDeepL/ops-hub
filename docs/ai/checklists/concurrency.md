@@ -1,4 +1,6 @@
-# concurrency / run coordination レビューチェックリスト
+# concurrency / run coordination レビューチェックリスト（非推奨・通常導線外）
+
+共通review基準は`AGENTS.md`とtask docに統合済み。この文書は過去参照の互換用。
 
 対象: advisory lock、run起動、retry、timeout、transaction、重複排除。
 

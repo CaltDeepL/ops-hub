@@ -118,7 +118,7 @@ Q系列の例:
 ---
 id: "Q1"
 slug: ci-quality-gate
-status: spec
+status: DRAFT
 depends_on: ["06"]
 ---
 ```
@@ -129,7 +129,7 @@ depends_on: ["06"]
 ---
 id: "07"
 slug: stale-lock-recovery
-status: planned
+status: DRAFT
 depends_on: ["06", "Q3"]
 ---
 ```
@@ -144,30 +144,16 @@ docs/task-Q1-ci-quality-gate.md
 id: "Q1"
 ```
 
-状態遷移:
+状態遷移と変更主体:
 
 ```text
-planned
-  ↓
-spec
-  ↓
-implementing
-  ├── blocked → spec
-  ↓
-review
-  ├── fixing → review
-  └── done
+DRAFT --Human only--> APPROVED
+APPROVED --Codex only--> IMPLEMENTED
+IMPLEMENTED --Claude only--> READY
+READY --Human only--> DONE
 ```
 
-定義:
-
-* `planned`: 未着手
-* `spec`: Claude Code による仕様確定済み
-* `implementing`: Codex 実装中
-* `blocked`: 設計変更・外部依存などで停止
-* `review`: Claude Code レビュー中
-* `fixing`: Codex によるレビュー指摘修正中
-* `done`: Review Record が READY で、人間の commit が可能
+`FIX`はstatusではなくreview verdictであり、`IMPLEMENTED`のままCodexへ戻す。設計判断・外部操作・安全境界で停止する場合は`BLOCKED`とする。未作成taskはtask docを持たず、index上だけ`NOT CREATED`と表示する。
 
 Task 01〜06 は legacy task とし、既存形式の実装記録を維持する。
 
@@ -1258,17 +1244,17 @@ BLOCKER / HIGHが残っている場合はREADYにしない。
 
 ## 27. 完了定義
 
-managed task で `status: done` にできる条件:
+managed task で `status: DONE` にできる条件:
 
-* Acceptance Criteria がすべて `[x]`
+* CodexとHuman ImmediateのAcceptance Criteriaがすべて`[x]`
 * unresolved Spec Deviations がない
 * `make verify` が成功
 * Implementation Recordに検証証拠がある
-* Review RecordのVerificationが完了
 * BLOCKER/HIGHが0件
-* Review disposition が `READY`
+* Review verdictが`READY`
+* Humanがcommit/pushを完了
 
-この時点で人間がcommitする。
+Human Deferred ACはDue付きで未確認のまま残せる。indexへ件数を表示し、後日の確認を隠さない。
 
 Task 01〜06 は legacy task として既存の完了状態を維持する。
 
@@ -1276,29 +1262,7 @@ Task 01〜06 は legacy task として既存の完了状態を維持する。
 
 ## 28. 現在地
 
-```text
-01  done
-02  done
-03  done
-04  done
-05  done
-06  done
-
-Q1  NEXT
-Q2  planned
-Q3  planned
-
-07  planned
-08  planned
-09  planned
-10  planned
-11  planned
-12  planned
-13  planned
-14  planned
-15  planned
-16  planned
-```
+現在地は各managed taskのfrontmatterを正本とし、`make task-index`で生成する`docs/task-INDEX.md`だけに表示する。この計画書へ状態を重複記録しない。
 
 実行順:
 
