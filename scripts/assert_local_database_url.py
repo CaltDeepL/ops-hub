@@ -7,7 +7,7 @@ import os
 import sys
 from urllib.parse import urlparse
 
-ALLOWED_HOSTS = {"localhost", "127.0.0.1", "::1", "db", "postgres"}
+ALLOWED_HOSTS = {"localhost", "127.0.0.1", "db", "postgres"}
 
 raw = os.environ.get("DATABASE_URL", "").strip()
 if not raw:
@@ -29,7 +29,7 @@ if host not in ALLOWED_HOSTS:
         file=sys.stderr,
     )
     print(
-        "verify: 許可host: localhost, 127.0.0.1, ::1, db, postgres",
+        "verify: 許可host: localhost, 127.0.0.1, db, postgres",
         file=sys.stderr,
     )
     sys.exit(1)

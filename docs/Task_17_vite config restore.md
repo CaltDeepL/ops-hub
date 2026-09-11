@@ -1,4 +1,4 @@
-# Task 07: vite.config.ts の復元
+# Task 17: vite.config.ts の復元
 
 ## 1. 背景・目的
 
@@ -10,7 +10,7 @@ TS18003: No inputs were found in tsconfig.node.json (include: vite.config.ts)
 
 で `npm run build`（`tsc -b && vite build`）が失敗する。`npm run dev` は Vite が tsconfig.node.json を経由せず直接起動するため影響を受けず、`npm run lint` も `vite.config.ts` を lint 対象に含めていないため影響を受けない。この非対称性が「lint成功・build失敗」の原因。
 
-品質基盤タスクの1番目として、これを復元しビルドをgreenに戻す。
+品質基盤タスクの1番目として(採番は17。旧07は本来のロードマップのtask-07=stale-lock-recoveryと衝突するため繰り上げ)、これを復元しビルドをgreenに戻す。
 
 ## 2. 設計判断
 
@@ -27,7 +27,7 @@ TS18003: No inputs were found in tsconfig.node.json (include: vite.config.ts)
 ## 4. 再現コマンド
 
 ```bash
-cd ~/A/ops-hub  
+cd ~/A/ops-hub   # 実際のパスに置き換え
 
 # 復元前の失敗を再現(確認用。既にvite.config.tsを配置済みなら成功するはず)
 npm run build
@@ -40,7 +40,8 @@ npm run lint      # 引き続き成功すること(影響なし)
 
 ## 5. 次タスクへの引き継ぎ
 
-- タスク08は `ci.yml` に実質的な検証ステップ（`npm run lint` / `npm run build`、および back_cargo 配下が復元され次第 `cargo fmt --check` / `clippy -D warnings` / `cargo test`）を追加すること。現状は checkout / cache初期化 / `npm ci` / `sqlx-cli` install のみで、run #12 のgreenは検証を伴わない。
+- タスク18でback_cargoを復元し、タスク19でAI協働フレームワークの残骸を削除、タスク20でci.ymlにmake verifyを組み込む。
 - back_cargo（Rustバックエンド）自体は「未配置」ではなく、古いチェックアウトにより一時的に作業ツリーから外れているだけ。復元が必要なら、過去チャット（タスク2〜6）のソースを再取得するところから。
 - security-audit.yml の `working-directory: back_cargo` 参照は、back_cargo復元とセットで解消する（back_cargo復元タスクの一部として扱うか、別タスクに切り出すかは着手時に判断）。
 - Dependabot（`.github/dependabot.yml`）・Ruleset差分（`strict required status checks` / `review thread resolution` / `unattributed changesへの追加approval`）は未着手のまま。
+
