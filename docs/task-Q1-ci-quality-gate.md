@@ -1,294 +1,853 @@
 ---
+
 id: "Q1"
 slug: ci-quality-gate
 status: done
-# planned -> spec -> implementing -> review -> fixing -> review -> done
-# 設計矛盾時: blocked -> spec
 depends_on: ["06"]
 ---
 
-# タスクQ1：CI / Quality Gate 基盤
+# Task Q1 — CI / Quality Gate 基盤
 
-| 項目 | 内容 |
-|---|---|
-| 上位ドキュメント | `docs/implementation-plan.md` §11「Q1 — CI / Quality Gate 基盤」 |
-| ゴール | Task 07以降の機能開発に入る前に、managed task運用・ローカル検証・CI・依存監査・AI scaffold表記を1つの一貫したルールへ統一する |
-| 完了条件 | AC-1〜AC-12 がすべて満たされ、CI上で `verify` job が実際にgreenになる（`make verify` のローカル実行だけでは完了扱いにしない） |
-| 実装範囲外 | `back_cargo/src/**` / `migrations/**` / `tests/**`（機能実装）、main branch protection/Ruleset（Q2）、Dependabot（Q3）、GitHub Actions monitor（Task 15） |
+## 1. 概要
 
-## 1. Context / 現状
+| 項目       | 内容                                                                                      |
+| -------- | --------------------------------------------------------------------------------------- |
+| 上位ドキュメント | `docs/implementation-plan.md` §11「Q1 — CI / Quality Gate 基盤」                            |
+| ゴール      | Task 07以降の機能開発に入る前に、managed task運用・ローカル検証・CI・依存監査・AI scaffold表記を一貫したルールへ統一する            |
+| 完了条件     | AC-1〜AC-12をすべて満たし、GitHub Actions上で `verify` job が実際にgreenになる                            |
+| 実装範囲外    | main branch protection / Ruleset（Q2）、Dependabot（Q3）、Task 15のmonitor実装、機能コード・migration変更 |
 
-Task 06完了時点で `POST /v1/runs` の骨格は実装済み（`docs/task-INDEX.md` 上 01〜06は `done`）。
-
-Q1着手前の状態として、直前のscaffold導入コミット（`task-6 claud code codex実装`）で次がすでに存在する。
-
-- `Makefile`（`verify` / `sqlx-prepare` / `task-index` ターゲット）
-- `scripts/assert_local_database_url.py` / `check_task_docs.py` / `update_task_index.py`
-- `docs/ai/PROJECT.md` / `WORKFLOW.md` / `CI-POLICY.md` / `checklists/*`
-- `docs/templates/task-template-v3.md` ほか
-- `.claude/skills/{spec,impl,review,fix}/SKILL.md`、`AGENTS.md`、`CLAUDE.md`
-
-この `/spec Q1` 起票時点で、**working treeには未コミットの変更がすでに存在する**（`git status` で確認可能）。
+状態遷移:
 
 ```text
-変更: Makefile, back_cargo/Dockerfile, docs/implementation-plan.md,
-      docs/task-INDEX.md, scripts/check_task_docs.py, scripts/update_task_index.py
-新規: .github/workflows/ci.yml, .github/workflows/security-audit.yml,
-      back_cargo/rust-toolchain.toml
+planned -> spec -> implementing -> review -> fixing -> review -> done
+
+設計矛盾時:
+blocked -> spec
 ```
 
-architect による検証の結果、これらはAC-1〜AC-9の大半を実質的に満たす内容になっているが、次の問題が見つかっている。
+---
 
-- `scripts/check_task_docs.py` の `TASK_RE` は `re.IGNORECASE` だが、frontmatter `id` との比較が大文字小文字を正規化していない（`docs/task-q1-*.md` + `id: "Q1"` のような組み合わせで誤ってFAILする）。
-- `back_cargo/Dockerfile` が `rust-toolchain.toml` をCOPYする一方、ベースイメージは `rust:1.96-slim-bookworm`（部分バージョン指定）のままで、`.github/workflows/ci.yml` 側は `rustup toolchain install 1.96.0` を個別にhardcodeしている。toolchainのバージョンが3箇所に分散し、正本が曖昧。
-- `docs/ai/CI-POLICY.md` に「Task 16より前に品質CI workflowを先回りして作らない」という記述が残っており、Q1でコード品質CIを構築するという本設計と矛盾する。
-- `docs/ai/PROJECT.md` の「現在地点」表・本文が「次はTask 07」のままで、Q1〜Q3を反映していない。
-- AI scaffold（`AGENTS.md` / `CLAUDE.md` / `.claude/skills/*/SKILL.md` の `NN` → `ID` 一般化）はまだ未着手。
+## 2. 背景
 
-本taskは、これらの既存差分を**そのまま実装の土台として使いつつ**、上記の不整合を解消し、CI上での実際のgreen実行まで確認することをゴールとする。CI/deployment領域の設計判断を含むため、本spec作成時にarchitect（read-only）でAC/DD候補を検証済み。
+Task 06完了時点で `POST /v1/runs` の骨格まで実装済み。
 
-## 2. Acceptance Criteria
+Q1着手前のscaffold導入によって、以下はすでに存在していた。
 
-- [x] AC-1: Q系列 (`Q1`, `Q2`, ...) が `scripts/check_task_docs.py` の検証対象になり、`task-Q1-ci-quality-gate.md` に対して実際にPASSする（大文字小文字を問わず filename ID と frontmatter `id` が一致すればPASSする）
-- [x] AC-2: Q系列が `docs/task-INDEX.md` に表示され、`make task-index` 実行後の next task が `status` に応じて動的に変わる（`Q1 done → Q2`, `Q2 done → Q3`, `Q3 done → 07` を手動でfrontmatterを書き換えて再現確認する）
-- [x] AC-3: Rust `1.96.0` / rustfmt / clippy が `back_cargo/rust-toolchain.toml` で固定され、`Cargo.toml` の `rust-version = "1.96"` と矛盾しない。CIワークフローはこのファイルから自動解決させ、`rustup toolchain install <version>` のようなバージョン番号のhardcodeを重複させない（DD-10）。Dockerfileのbuilderベースイメージは `rust-toolchain.toml` の `channel` と一致する具体バージョンタグ（例: `rust:1.96.0-slim-bookworm`）に固定する（DD-10）
-- [x] AC-4: `make verify` が `DATABASE_URL` 無しの `SQLX_OFFLINE=true cargo check --all-targets --all-features` を含み、これがローカルで実際に成功する
-- [x] AC-5: PRと `main` push で `.github/workflows/ci.yml` の `verify` jobが起動する（実際にGitHub Actions上で1回green実行された証跡をImplementation Recordへ残す）
-- [x] AC-6: CIのPostgreSQL 17 service containerへmigration適用後、`make verify` がCI上で成功する
-- [x] AC-7: CIがNeon / production secretsを一切参照しない（`secrets.*` 未使用、`DATABASE_URL` はservice containerのみ）
-- [x] AC-8: `cargo audit` が `.github/workflows/security-audit.yml` として独立し、`schedule` (weekly) と `workflow_dispatch` の両方をサポートし、`make verify` には含まれない
-- [x] AC-9: `.github/workflows/*.yml` の `uses:` がすべて40桁のfull commit SHAで固定され、コメントのバージョン番号と実際のSHAが一致する（Docker service image (`postgres:17-bookworm` 等) のタグ指定はこのACの対象外とする）
-- [x] AC-10: `AGENTS.md` / `CLAUDE.md` / `.claude/skills/{spec,impl,review,fix}/SKILL.md` の `NN` / `Task NN` 表記が `ID` / `managed task` へ一般化される（`docs/templates/adr-template.md` の `NNNN` はADR番号のため対象外）
-- [x] AC-11: `docs/ai/PROJECT.md` の「現在地点」表と本文がQ1〜Q3を含み、次タスクをQ1として記載する
-- [x] AC-12: `docs/ai/CI-POLICY.md` が本designと矛盾しないよう更新される（「Task 16より前に品質CIを先回りしない」旨の記述を削除し、Q1でコード品質CIを確定する旨を明記する。「`monitor.yml` と品質CIを混ぜない」という方針は維持する）
+* `Makefile`
 
-## 3. 設計判断・不変条件
+  * `verify`
+  * `sqlx-prepare`
+  * `task-index`
+* `scripts/assert_local_database_url.py`
+* `scripts/check_task_docs.py`
+* `scripts/update_task_index.py`
+* `docs/ai/PROJECT.md`
+* `docs/ai/WORKFLOW.md`
+* `docs/ai/CI-POLICY.md`
+* `docs/templates/task-template-v3.md`
+* `.claude/skills/{spec,impl,review,fix}/SKILL.md`
+* `AGENTS.md`
+* `CLAUDE.md`
 
-- DD-1: required候補job名は `verify` で固定する（Q2のbranch protectionが参照する名前と一致させる）
-- DD-2: `cargo audit` は `make verify` に含めない。dependency advisory DBの外部要因で通常の品質ゲートを不安定にしない
-- DD-3: Neon production DBをCI検証に使わない。CIは常にlocal PostgreSQL 17 service containerのみを使う
-- DD-4: `monitor.yml`（Task 15の運用監視）と `ci.yml`（コード品質CI）を混ぜない。責務が異なるworkflowを1ファイルに統合しない
-- DD-5: Q2以前にbranch protection/Rulesetを設定しない
-- DD-6: Q3以前にDependabotを追加しない
-- DD-7: Task 15のmonitor実装をQ1で先取りしない
-- DD-8: 最終品質ゲートは引き続き `make verify` 一つとする。個別コマンドを「同等」として代用しない
-- DD-9: task IDの正本表記は大文字（`Q1`）。`check_task_docs.py` の filename↔frontmatter比較は両者を同じ正規化（`.upper()`）を通してから比較する。現状の大文字小文字不一致バグ（`docs/task-q1-*.md` のようなlowercase filenameで誤FAIL/誤PASSしうる非対称性）を修正する
-- DD-10: Rust toolchainバージョンの単一正本は `back_cargo/rust-toolchain.toml` とする。`.github/workflows/ci.yml` はこのファイルから自動解決させ、`rustup toolchain install <version>` のようなバージョン番号のhardcodeをワークフロー側に重複させない。`back_cargo/Dockerfile` のbuilderベースイメージは `rust-toolchain.toml` の `channel` と一致する具体バージョンタグ（例: `rust:1.96.0-slim-bookworm`）に固定し、`rust:1.96-slim-bookworm` のような部分バージョン指定を使わない
-- DD-11: `docs/templates/adr-template.md` の `NNNN` はADR番号であり、Q1の `NN` → `ID` 一般化の対象に含めない
-- DD-12: AC-9のSHA pin対象は `uses:` で参照するGitHub Actionsのみとする。Docker service container image（`postgres:17-bookworm` 等）のtag pinはQ1のscope外とし、別途判断が必要になった場合はSpec Deviationsで扱う
-- DD-13: `docs/ai/CI-POLICY.md` の「2種類のworkflowを混ぜない」（DD-4相当）という記述は維持したまま更新する。「Task 16より前に品質CIを先回りして作らない」という記述だけを削除し、「コード品質CIはQ1で確定する」と明記する
-- DD-14: `docs/ai/PROJECT.md` の更新は「現在地点」表とその直後の説明文に限定し、他のセクション（技術スタック、実装境界、Task 07 handoffなど）の内容は変更しない
+Q1では既存差分を土台として使い、CI / managed task / AI scaffold間の不整合を解消した。
 
-## 4. 想定変更箇所
+### Q1着手時に確認された主な問題
 
-- `docs/task-Q1-ci-quality-gate.md` — 本task doc（既に作成）
-- `.github/workflows/ci.yml` — `verify` job。toolchain hardcode除去（DD-10）
-- `.github/workflows/security-audit.yml` — 既存内容で概ねAC-8を満たす。変更なしの可能性が高い
-- `back_cargo/rust-toolchain.toml` — 既存内容で概ねAC-3を満たす。変更なしの可能性が高い
-- `back_cargo/Dockerfile` — builderベースイメージのタグをexact pinへ変更（DD-10）
-- `Makefile` — 既存の `SQLX_OFFLINE` check追加で概ねAC-4を満たす。変更なしの可能性が高い
-- `scripts/check_task_docs.py` — DD-9のcase正規化バグ修正
-- `scripts/update_task_index.py` — 既存内容で概ねAC-1/AC-2を満たす。変更なしの可能性が高い
-- `AGENTS.md` — `NN` → `ID` 一般化（AC-10）
-- `CLAUDE.md` — `NN` → `ID` 一般化（AC-10）
-- `.claude/skills/spec/SKILL.md` / `impl/SKILL.md` / `review/SKILL.md` / `fix/SKILL.md` — `argument-hint` と本文の `NN` → `ID` 一般化（AC-10）
-- `docs/ai/PROJECT.md` — 現在地点表の更新（AC-11）
-- `docs/ai/CI-POLICY.md` — Task 16前提の記述更新（AC-12）
-- `docs/task-INDEX.md` — `make task-index` の生成物。手動編集しない
+1. `check_task_docs.py`
 
-ファイル名の微調整は許容するが、DD-* を変える必要が出た場合は Spec Deviations を使う。
+   * filename側はcase-insensitiveだったが、frontmatter `id` との比較でcase正規化されていなかった。
 
-## 5. DB / migration / SQLx
+2. Rust toolchain
 
-変更なし。Q1は `migrations/` / `.sqlx/` を一切変更しない。
+   * `rust-toolchain.toml`
+   * Dockerfile
+   * GitHub Actions
 
-## 6. API / 互換性
+   の3箇所にバージョン管理が分散していた。
 
-変更なし。Q1はHTTP APIの挙動・契約に影響しない。
+3. `docs/ai/CI-POLICY.md`
 
-## 7. ADR
+   * 「Task 16より前に品質CIを作らない」という旧方針が残っていた。
 
-なし。Q系列（Q1〜Q3）を16機能タスクの番号体系を崩さずに挿入するという設計自体の理由は、既に `docs/implementation-plan.md` §1・§4 に記載済みであり、追加のADRを必要とするほどの独立した長期判断はQ1には無い。
+4. `docs/ai/PROJECT.md`
 
-## 8. Spec Deviations
+   * Q1〜Q3追加後も「次はTask 07」のままだった。
+
+5. AI scaffold
+
+   * `NN`
+   * `Task NN`
+
+   という旧表記が残り、Q系列を正式に扱えなかった。
+
+---
+
+## 3. Acceptance Criteria
+
+- [x] AC-1: Q系列を `check_task_docs.py` の検証対象にし、filename IDとfrontmatter `id` をcase-insensitiveで比較する
+- [x] AC-2: Q系列を `task-INDEX.md` に表示し、next taskをstatusから動的算出する
+- [x] AC-3: Rust 1.96.0 / rustfmt / clippyを `rust-toolchain.toml` で固定し、CIとDockerも整合させる
+- [x] AC-4: `make verify` に `SQLX_OFFLINE=true cargo check --all-targets --all-features` を含める
+- [x] AC-5: PR / main pushで `ci.yml` の `verify` jobを起動し、実際のgreen runを確認する
+- [x] AC-6: PostgreSQL 17 service containerへmigration適用後、CI上で `make verify` を成功させる
+- [x] AC-7: CIからNeon / production secretsを参照しない
+- [x] AC-8: `cargo audit` を独立した `security-audit.yml` とし、weekly + manual実行にする
+- [x] AC-9: GitHub Actionsの `uses:` を40桁full SHAで固定する
+- [x] AC-10: AI scaffoldの `NN` / `Task NN` を `ID` / `managed task` へ一般化する
+- [x] AC-11: `PROJECT.md` にQ1〜Q3と現在地点を反映する
+- [x] AC-12: `CI-POLICY.md` をQ1の品質CI方針と整合させる
+
+---
+
+# 4. 設計判断
+
+## CI / Quality Gate
+
+### DD-1
+
+required check候補のjob名は `verify` に固定する。
+
+Q2のbranch protection / Rulesetもこの名前を参照する。
+
+### DD-2
+
+`cargo audit` は `make verify` に含めない。
+
+dependency advisory DBなど外部要因によって通常の品質ゲートが不安定になることを避ける。
+
+### DD-3
+
+CIではNeon / production DBを使わない。
+
+PostgreSQL 17 service containerのみを利用する。
+
+### DD-4
+
+以下を別workflowとして維持する。
+
+```text
+ci.yml
+  -> コード品質CI
+
+monitor.yml
+  -> Task 15の運用監視
+```
+
+責務が異なるため統合しない。
+
+### DD-5
+
+Q2以前にbranch protection / Rulesetを設定しない。
+
+### DD-6
+
+Q3以前にDependabotを追加しない。
+
+### DD-7
+
+Task 15のmonitor実装をQ1で先取りしない。
+
+### DD-8
+
+最終品質ゲートは `make verify` 一つとする。
+
+個別コマンドを「同等の検証」として代用しない。
+
+---
+
+## managed task
+
+### DD-9
+
+Task IDの正本表記は大文字とする。
+
+```text
+Q1
+Q2
+Q3
+```
+
+filename IDとfrontmatter `id` は双方を `.upper()` で正規化して比較する。
+
+---
+
+## Rust toolchain
+
+### DD-10
+
+Rust toolchainバージョンの単一正本は以下とする。
+
+```text
+back_cargo/rust-toolchain.toml
+```
+
+CIはこのファイルからtoolchainを自動解決する。
+
+GitHub Actions側に次のようなバージョンhardcodeを持たせない。
+
+```text
+rustup toolchain install 1.96.0
+```
+
+Docker builderは同じchannelのexact tagを使用する。
+
+```dockerfile
+rust:1.96.0-slim-bookworm
+```
+
+部分バージョン指定は使用しない。
+
+```dockerfile
+rust:1.96-slim-bookworm
+```
+
+---
+
+## AI scaffold / docs
+
+### DD-11
+
+`docs/templates/adr-template.md` の `NNNN` はADR番号なので変更対象外。
+
+### DD-12
+
+SHA pin対象はGitHub Actionsの `uses:` のみ。
+
+```yaml
+uses: ...
+```
+
+Docker service imageのtag pinはQ1のscope外。
+
+### DD-13
+
+`CI-POLICY.md` の以下の原則は維持する。
+
+```text
+品質CIとmonitor workflowを混ぜない
+```
+
+削除するのは旧方針:
+
+```text
+Task 16より前に品質CIを作らない
+```
+
+新方針:
+
+```text
+コード品質CIはQ1で確定する
+```
+
+### DD-14
+
+`PROJECT.md` の変更対象は基本的に以下へ限定する。
+
+* 現在地点
+* Q1〜Q3
+* 次タスク
+
+他の技術スタックやTask 07 handoff等は変更しない。
+
+---
+
+# 5. 変更対象
+
+## CI / toolchain
+
+```text
+Makefile
+.github/workflows/ci.yml
+.github/workflows/security-audit.yml
+back_cargo/rust-toolchain.toml
+back_cargo/Dockerfile
+```
+
+## managed task
+
+```text
+scripts/check_task_docs.py
+scripts/update_task_index.py
+docs/task-INDEX.md
+docs/templates/task-template-v3.md
+```
+
+## AI scaffold
+
+```text
+AGENTS.md
+CLAUDE.md
+
+.claude/skills/spec/SKILL.md
+.claude/skills/impl/SKILL.md
+.claude/skills/review/SKILL.md
+.claude/skills/fix/SKILL.md
+```
+
+## 方針文書
+
+```text
+docs/ai/PROJECT.md
+docs/ai/WORKFLOW.md
+docs/ai/CI-POLICY.md
+docs/implementation-plan.md
+```
+
+## Task記録
+
+```text
+docs/task-Q1-ci-quality-gate.md
+```
+
+---
+
+# 6. DB / APIへの影響
+
+## DB
+
+変更なし。
+
+Q1では以下を変更しない。
+
+```text
+migrations/**
+.sqlx/**
+query
+schema
+```
+
+## HTTP API
+
+変更なし。
+
+Q1はHTTP APIの契約・レスポンス・挙動には影響しない。
+
+## ADR
+
+追加なし。
+
+Q1〜Q3を16機能タスクへ挿入する理由は、すでに `docs/implementation-plan.md` に記録されているため。
+
+## Spec Deviations
 
 - なし。
 
-## 9. 検証
+---
 
-反復用の狭い検証:
+## 7. Implementation Record
 
-```bash
-export DATABASE_URL="postgres://ops_hub:ops_hub@localhost:5433/ops_hub"
-cd back_cargo && env -u DATABASE_URL SQLX_OFFLINE=true cargo check --all-targets --all-features
-python3 scripts/check_task_docs.py
-python3 scripts/update_task_index.py && git diff --stat docs/task-INDEX.md
+_実装結果（Codexによる変更内容）を記録する。ローカル品質ゲート `make verify` の実行証跡は次節「8. Verification」を参照。_
+
+## managed task
+
+filename IDとfrontmatter `id` を双方 `.upper()` で正規化するよう修正した。
+
+これにより、例えば以下も正しく一致する。
+
+```text
+docs/task-q1-xxx.md
+id: "Q1"
 ```
 
-AC-5/AC-6はローカルだけで確認できないため、実際にPR/pushをトリガーしてGitHub Actions上で `verify` jobがgreenになったことを確認し、実行URLか run IDをImplementation Recordへ残す。
+case違いのfixtureを使ってPASSを確認済み。
 
-最終品質ゲート:
+---
+
+## Task Index
+
+next taskをstatusから動的に算出する。
+
+以下をfixtureで確認済み。
+
+```text
+Q1 done -> Q2
+Q2 done -> Q3
+Q3 done -> 07
+```
+
+---
+
+## Rust toolchain
+
+単一正本:
+
+```text
+back_cargo/rust-toolchain.toml
+```
+
+設定:
+
+```text
+Rust 1.96.0
+rustfmt
+clippy
+```
+
+CI側のRustバージョンhardcodeを削除。
+
+Docker builder:
+
+```dockerfile
+rust:1.96.0-slim-bookworm
+```
+
+---
+
+## GitHub Actions SHA pin
+
+2026-09-11時点で公式repositoryのtagを `git ls-remote` で照合。
+
+対象:
+
+```text
+actions/checkout       v6
+actions/setup-node     v6
+Swatinem/rust-cache    v2.9.2
+taiki-e/install-action v2.87.5
+```
+
+workflowの `uses:` はすべて40桁full commit SHAへ固定した。
+
+---
+
+## AI scaffold
+
+以下を一般化した。
+
+```text
+NN
+Task NN
+```
+
+↓
+
+```text
+ID
+managed task
+```
+
+managed taskの定義:
+
+```text
+managed task
+=
+Q系列
++
+Task 07以降
+```
+
+`AGENTS.md` についてはレビュー中にscope外のガバナンス追加が検出されたため削除し、最終的にはQ1で承認された変更だけを残した。
+
+---
+
+# 8. Verification
+
+## ローカル品質ゲート
+
+実行:
 
 ```bash
+DATABASE_URL=postgres://ops_hub:ops_hub@localhost:5433/ops_hub make verify
+```
+
+結果:
+
+```text
+exit 0
+
+SQLX_OFFLINE=true cargo check
+  success
+
+cargo fmt
+  success
+
+cargo clippy
+  success
+
+cargo sqlx prepare --check
+  success
+
+cargo test
+  31 passed
+  0 failed
+
+npm lint
+  success
+
+npm build
+  success
+
+scripts/check_task_docs.py
+  success
+```
+
+F1 / F1a / F1b修正後にも同じ検証を再実行し、成功を確認した。
+
+---
+
+# 9. GitHub Actions実行証跡
+
+## Pull Request
+
+```text
+branch:
+infrastructure/ci-setup
+
+run:
+34539577786
+
+event:
+pull_request
+
+status:
+completed
+
+conclusion:
+success
+```
+
+## main push
+
+```text
+run:
+34539586345
+
+event:
+push
+
+head_branch:
+main
+
+status:
+completed
+
+conclusion:
+success
+```
+
+reviewerがGitHub Actions REST APIで独立確認した。
+
+main push runでは `verify` job内で以下が成功していることも確認済み。
+
+```text
+PostgreSQL 17 service container起動
+        ↓
+Run migrations
+        ↓
 make verify
+        ↓
+success
 ```
 
-## 10. Implementation Record
+したがってAC-5 / AC-6は完了。
 
-_Codexが実装完了時に更新する。_
+---
 
-### 変更ファイル
+# 10. Acceptance Evidence
 
-- 品質ゲート / toolchain: `Makefile`, `back_cargo/rust-toolchain.toml`, `back_cargo/Dockerfile`
-- GitHub Actions: `.github/workflows/ci.yml`, `.github/workflows/security-audit.yml`
-- managed task運用: `scripts/check_task_docs.py`, `scripts/update_task_index.py`, `docs/task-INDEX.md`, `docs/templates/task-template-v3.md`
-- AI scaffold / 方針文書: `AGENTS.md`, `CLAUDE.md`, `.claude/skills/{spec,impl,review,fix}/SKILL.md`, `docs/ai/PROJECT.md`, `docs/ai/WORKFLOW.md`, `docs/ai/CI-POLICY.md`, `docs/implementation-plan.md`
-- 実装記録: `docs/task-Q1-ci-quality-gate.md`
+| AC    | 主な証跡                                                               |
+| ----- | ------------------------------------------------------------------ |
+| AC-1  | `scripts/check_task_docs.py` + case違いfixture                       |
+| AC-2  | `scripts/update_task_index.py` + Q1→Q2→Q3→07のfixture確認             |
+| AC-3  | `rust-toolchain.toml` / `Cargo.toml` / Dockerfile / `rustc 1.96.0` |
+| AC-4  | `Makefile` の `SQLX_OFFLINE=true cargo check`                       |
+| AC-5  | Actions run `34539586345` / `34539577786`                          |
+| AC-6  | run `34539586345` のmigration → verify成功                            |
+| AC-7  | CI workflowで `secrets.*` 未使用                                       |
+| AC-8  | `security-audit.yml` のschedule + workflow_dispatch                 |
+| AC-9  | Actionsのfull SHA pinを `git ls-remote` で確認                          |
+| AC-10 | `AGENTS.md` / `CLAUDE.md` / `.claude/skills/*`                     |
+| AC-11 | `docs/ai/PROJECT.md`                                               |
+| AC-12 | `docs/ai/CI-POLICY.md`                                             |
 
-### 実装上の判断
-
-- Q1着手前から存在した未コミット差分を土台として維持し、DD-1〜DD-14に必要な箇所だけを補完した。
-- filename IDとfrontmatter `id` は双方を `.upper()` で正規化して比較する。小文字filenameの一時fixtureでPASSを確認した。
-- CIのRust手動installを削除し、`back_cargo` 配下のCargo実行が `rust-toolchain.toml` を自動解決する構成にした。Docker builderは同じchannelのexact tag `1.96.0` に固定した。
-- task indexのnext taskは一時fixtureのfrontmatterを順に変更し、`Q1 done → Q2`, `Q2 done → Q3`, `Q3 done → 07` を確認した。
-- ActionsのSHAは2026-09-11に公式repositoryのtagを `git ls-remote` で照合した（checkout v6、setup-node v6、rust-cache v2.9.2、install-action v2.87.5）。
-- F1/F1a/F1b対応として、`AGENTS.md` からスコープ外の新規セクション `自律動作・自動承認`、`最小差分原則`、`実装時の基本フロー`、`Codexがしてはいけない判断`、`完了条件` を削除した。既存セクションへの実質的な追加も削除し、AC-10で承認された `task-NN` → `task-ID` と「Task 07以降」→「managed task（Q系列およびTask 07以降）」の2箇所だけを差分として残した。
-
-### DB / APIへの影響
-
-- 変更なし。migration / query / `.sqlx/` / HTTP APIは変更していない。
-
-### Verification evidence
-
-```text
-DATABASE_URL=postgres://ops_hub:ops_hub@localhost:5433/ops_hub make verify
-exit 0
-- SQLX_OFFLINE=true cargo check: success
-- cargo fmt / clippy / sqlx prepare --check: success
-- cargo test: 31 passed, 0 failed
-- npm lint / build: success
-- scripts/check_task_docs.py: success
-```
-
-F1/F1a/F1b修正後の再検証（2026-09-11）:
-
-```text
-DATABASE_URL=postgres://ops_hub:ops_hub@localhost:5433/ops_hub make verify
-exit 0
-- SQLX_OFFLINE=true cargo check: success
-- cargo fmt / clippy / sqlx prepare --check: success
-- cargo test: 31 passed, 0 failed
-- npm lint / build: success
-- scripts/check_task_docs.py: success
-```
-
-CI実行証跡（AC-5/AC-6）:
-
-```text
-main push トリガー:
-  https://github.com/CaltDeepL/ops-hub/actions/runs/34539586345
-  event: push, head_branch: main, status: completed, conclusion: success
-
-PR (infrastructure/ci-setup) トリガー:
-  https://github.com/CaltDeepL/ops-hub/actions/runs/34539577786
-  event: pull_request, head_branch: infrastructure/ci-setup, status: completed, conclusion: success
-
-確認方法: GitHub Actions API (2026-09-11、Claude Codeが `gh` 未認証のため
-`curl https://api.github.com/repos/CaltDeepL/ops-hub/actions/runs/<run_id>` で無認証取得し、
-event/head_branch/status/conclusionを実測)。
-両runとも `verify` jobを含み、PostgreSQL 17 service container上でmigration適用後の
-`make verify` がCI上で成功したことを確認。
-```
-
-### 残課題
-
-- なし。人間が本差分をpush/PRし、`verify` jobのgreen run証跡（push: main / pull_request: infrastructure/ci-setup）を確認・追記済み。AC-5/AC-6を完了へ更新した。
+---
 
 ## 11. Review Record
 
 _Claude Code親セッションがread-only reviewerの結果を転記する。_
 
-### Verification
-
 - [x] `make verify` の実際の成功結果を確認した。
-      （ローカルDocker PostgreSQL不使用のためフル`make verify`のローカル実行は未実施だが、fix cycle 3のreviewerがCI run `34539586345` のjobs APIを直接叩き、`verify` jobの `Run migrations` → `Verify`（`make verify`本体）ステップが `conclusion=success` であることを実測確認した。task doc完了条件（§冒頭「CI上で`verify` jobが実際にgreenになる」）が要求する形そのもの）
 - [x] 全Acceptance Criteriaを具体的diff/test証拠へ対応付けた。
-      （1巡目: reviewer + reviewer-criticalの2段階、2巡目: reviewerによるfix確認、3巡目: reviewerによるAC-5/AC-6証跡の独立検証、で file:line 根拠を確認済み）
-
-### Fix cycle 2（F1/F1a/F1b/F4対応後の再レビュー）
-
-`reviewer`（Sonnet）が `git diff -- AGENTS.md` を実測: 差分は `docs/task-NN-*.md`→`docs/task-ID-*.md`（AGENTS.md:15）と「Task 07以降は」→「managed task（Q系列およびTask 07以降）は」（AGENTS.md:118）の2箇所のみに縮小されており、F1/F1a/F1bの原因だった新規ガバナンスセクション（自律動作・自動承認等）は完全に削除されたことを確認。F4はtask doc側の文言修正で解消済み。AGENTS.md以外への無関係な変更混入もなし。AC-1〜AC-4, AC-7〜AC-12は今回のfixで壊れていないことも再確認済み。ローカル `SQLX_OFFLINE cargo check` と `check_task_docs.py` は成功。フル`make verify`はローカルDB無しのため未実行（1巡目と同じ制約）。
-
-残る唯一の指摘はF2（AC-5/AC-6未達）で、これはCodexの実装欠陥ではなく、人間がpush/PRしてCI上の`verify` job green実行証跡を得る必要がある構造的な残課題。BLOCKER 0 / HIGH 1（F2のみ）/ MEDIUM 0 / LOW 2（F5, F6、いずれも今回対応不要）。
-
-### Fix cycle 3（F2対応後の最終レビュー）
-
-人間がPR #2（`infrastructure/ci-setup` → `main`、head commit `8af9284`、merge commit `7418cbda2e80056394c9477643a79c4381c4ab42`）を作成・mergeし、Claudeが以下2件のCI run証跡をImplementation Recordへ追記した。
-
-- push/main run: `https://github.com/CaltDeepL/ops-hub/actions/runs/34539586345`（`head_sha=7418cbda...`, conclusion=success）
-- pull_request run: `https://github.com/CaltDeepL/ops-hub/actions/runs/34539577786`（`head_sha=8af9284...`, conclusion=success）
-
-`reviewer`（Sonnet）がこれをGitHub Actions REST APIへの無認証GETで独立に再検証: 両run IDのevent/head_branch/head_sha/conclusionを実測し、`head_sha`が実際のmerge commit・PR head commitと一致することを`git show`で確認。さらにrun `34539586345`のjobs APIで`verify`ジョブの`Run migrations`（Postgres 17 service containerへのmigration適用）→`Verify`（`make verify`本体）の各ステップが`conclusion=success`であることを実測し、AC-5・AC-6を正当化した。F1/F1a/F1b/F4（既解消）とF5/F6（LOW、対応不要）に変化なし。`docs/implementation-plan.md`の大規模差分（F3）にも新たな悪化なし。Spec Deviations未解決なし。
-
-結論: BLOCKER 0 / HIGH 0 / MEDIUM 0 / LOW 2（F5, F6、いずれも対応不要のQ2/軽微引き継ぎ事項）→ **READY**。
-
-### Acceptance evidence
-
-| Criterion | Evidence (`file:line` / test / command) |
-|---|---|
-| AC-1 | `scripts/check_task_docs.py:34-38` / `python3 scripts/check_task_docs.py` → exit 0（大文字小文字fixtureでの回帰テストも実施しPASS） |
-| AC-2 | `scripts/update_task_index.py:140-149`（next_task動的算出）／`docs/task-INDEX.md:6`「次タスク: Q1」 |
-| AC-3 | `back_cargo/rust-toolchain.toml:1-4`、`back_cargo/Cargo.toml:5`（`rust-version = "1.96"`）。実測 `rustc --version` → `1.96.0`。※文言とDD-10の関係はF4参照 |
-| AC-4 | `Makefile:6`（`env -u DATABASE_URL SQLX_OFFLINE=true cargo check ...`）／ローカル実行で成功確認済み |
-| AC-5 | GitHub Actions run [`34539586345`](https://github.com/CaltDeepL/ops-hub/actions/runs/34539586345)（`event=push`, `head_branch=main`, `head_sha=7418cbda...`＝PR#2 merge commit, `conclusion=success`）と run [`34539577786`](https://github.com/CaltDeepL/ops-hub/actions/runs/34539577786)（`event=pull_request`, `head_branch=infrastructure/ci-setup`, `head_sha=8af9284...`, `conclusion=success`）をreviewerがAPI実測。PR/main push双方で`verify` jobが起動し成功 |
-| AC-6 | run `34539586345`のjobs APIで`verify`ジョブの`Run migrations`（Postgres 17 service containerへmigration適用）→`Verify`（`make verify`本体）ステップが`conclusion=success`であることをreviewerが実測 |
-| AC-7 | `.github/workflows/ci.yml:63-78`／`security-audit.yml`全体（`secrets.*`未使用、`permissions: contents: read`のみ、`pull_request`で`pull_request_target`ではない） |
-| AC-8 | `.github/workflows/security-audit.yml:3-6`（`schedule`+`workflow_dispatch`）／`Makefile`にaudit混入なし |
-| AC-9 | `ci.yml:39,42,47,57` / `security-audit.yml:23,26`。`git ls-remote`で4件全て実SHAと一致確認済み（`rust-cache`はannotated tag `v2.9.2^{}`のderef先が正しく使われている） |
-| AC-10 | `CLAUDE.md`, `.claude/skills/{spec,impl,review,fix}/SKILL.md`, `AGENTS.md:17,294` の`NN`→`ID`一般化自体は確認。ただし`AGENTS.md`にAC-10範囲外の追加ありF1参照 |
-| AC-11 | `docs/ai/PROJECT.md:17-34`（Q1〜Q3を含む表、次タスク=Q1） |
-| AC-12 | `docs/ai/CI-POLICY.md:23-40`（先回り記述削除、「Q1で確定」明記、「2種類を混ぜない」は維持） |
-
-### Findings
-
-| ID | Severity | File:line | 失敗シナリオ / 指摘 | 必要な修正 | 根拠 |
-|---|---|---|---|---|---|
-| F1 | ~~HIGH~~ **解消** | `AGENTS.md:15,118`（旧`:69-192,349-437`） | ~~task doc §4はAGENTS.md変更を「AC-10（`NN`→`ID`一般化）」に限定しているが、実際は345行規模の新規ガバナンスセクションが追加されていた~~ → Codexが新規セクションを全削除し、AC-10スコープの2箇所（`docs/task-NN-*.md`→`docs/task-ID-*.md`、「Task 07以降」→「managed task」）のみに縮小。fix cycle 2のreviewerが`git diff`で実測確認 | 対応不要（解消済み） | fix cycle 2 reviewer検証 |
-| F1a | ~~HIGH~~ **解消** | （該当セクション削除により消滅） | ~~`.env`無条件読み取り自動承認がCLAUDE.mdと矛盾~~ → 原因セクションごと削除されたため解消 | 対応不要（解消済み） | fix cycle 2 reviewer検証 |
-| F1b | ~~LOW~~ **解消** | （該当セクション削除により消滅） | ~~`sed`の誤分類~~ → 原因セクションごと削除されたため解消 | 対応不要（解消済み） | fix cycle 2 reviewer検証 |
-| F2 | ~~HIGH~~ **解消** | `docs/task-Q1-ci-quality-gate.md:16,56-57` | ~~完了条件は「CI上で`verify` jobが実際にgreenになる」ことを明示要求しているが、AC-5/AC-6は未達~~ → 人間がPR #2をmerge（`8af9284`→`7418cbda`）し、Claudeが2件のCI run URL/run IDをImplementation Recordへ追記。fix cycle 3のreviewerがGitHub Actions APIへの実測でhead_sha一致・`verify` job成功（migration適用含む）を独立検証しAC-5/AC-6を正当化 | 対応不要（解消済み） | fix cycle 3 reviewer検証（run `34539586345`, `34539577786`） |
-| F3 | LOW | `docs/implementation-plan.md`（全体） | 1000行規模の差分。§1で「Q1着手前から存在する未コミット差分」として土台化は授権済みだが、Task 07の`depends_on`変更や章番号の再構成など書式変換以外の実質変更もあり、task doc §4に記載がない | 次回以降、§4の想定変更箇所に実質変更を伴うファイルを明記する。内容はAC/DDと整合しており修正必須ではない | task doc §1:34-48, §4:92-97 |
-| F4 | MEDIUM | `docs/task-Q1-ci-quality-gate.md:54` vs `:76` | AC-3の文言「baseイメージタグにバージョン番号を重複記述しない」と、DD-10「`rust-toolchain.toml`のchannelと一致する具体バージョンタグに固定する（例: `rust:1.96.0-slim-bookworm`）」が字面上矛盾する。実装はDD-10を採用（`back_cargo/Dockerfile:4`）しており判断自体は妥当 | ~~task doc内の記載矛盾をSpec Deviationsへ記録し、AC-3の文言をDD-10と整合する表現へ修正する~~ → **対応済み**: `/fix Q1`時にClaudeがAC-3文言をDD-10と整合する表現へ直接修正した（task doc記載のみの修正のためCodex対応不要） | task doc `:54,:76`／`back_cargo/Dockerfile:4` |
-| F5 | LOW | `.github/workflows/ci.yml:12-14` | `cancel-in-progress: true`が`push: main`にも適用されるため、Q2でrequired checkにした際、main連続pushで進行中の`verify` runがcancelされたまま残る可能性がある | Q2の設計時に、main pushの`concurrency`設定見直しを検討事項として引き継ぐ | `.github/workflows/ci.yml:3-14` |
-| F6 | LOW | `scripts/update_task_index.py`（末尾）／`back_cargo/rust-toolchain.toml`（末尾） | 末尾に改行が無い（同diffが他ファイルの同種問題を修正しているのに新規発生） | 各ファイル末尾に改行を追加する | — |
-
-### Review disposition
-
-- [ ] BLOCKED
-- [ ] CHANGES REQUESTED
 - [x] READY
 
-**fix cycle 1**（Sonnet→Opus 2段階）: BLOCKER 0 / HIGH 3（F1, F1a, F2）/ MEDIUM 1（F4）/ LOW 3（F1b, F3, F5, F6）→ CHANGES REQUESTED。
+### 最終結果
 
-**fix cycle 2**（F1/F1a/F1b/F4対応後、Sonnet再レビュー）: F1/F1a/F1b/F4は解消確認。残るのはBLOCKER 0 / HIGH 1（F2のみ）/ MEDIUM 0 / LOW 2（F5, F6、いずれも今回対応不要）→ CHANGES REQUESTED（唯一の理由はF2）。
+```text
+BLOCKER  0
+HIGH     0
+MEDIUM   0
+LOW      2
+```
 
-**fix cycle 3**（F2対応後、Sonnet最終レビュー）: 人間がPR #2をmerge、ClaudeがCI run証跡2件をImplementation Recordへ追記。reviewerがGitHub Actions APIへの実測でhead_sha一致・`verify` job成功（migration適用含む）を独立検証。BLOCKER 0 / HIGH 0 / MEDIUM 0 / LOW 2（F5, F6、いずれも対応不要のQ2/軽微引き継ぎ事項）→ **READY**。
+Disposition:
 
-全AC（AC-1〜AC-12）が`[x]`、未解決Spec Deviationsなし、CI上での実際の`make verify`成功証跡（run `34539586345`のjobs API実測）を確認済み。人間によるcommit可能な状態。
+```text
+READY
+```
 
-## 12. つまずいた点と教訓
+全AC完了。
 
-<実装時に発生した問題と、次回再発防止になる知識。>
+未解決Spec Deviationsなし。
 
-## 13. 次タスクへの引き継ぎ
+CI上で実際の `make verify` 成功を確認済み。
 
-- Q2はrequired check候補として `verify` job名をそのまま使う（DD-1）。job名を変更しないこと。
-- Q1のCIはNeon/production secretsを一切使わない設計。Q2のbranch protection設定時もこの前提を崩さない。
-- `cargo audit`（`security-audit.yml`）はrequired checkにしない。Q2のRuleset設定でaudit workflowを必須化しない。
+---
 
-## 14. 再現コマンド
+### Fix cycle 1
+
+結果:
+
+```text
+BLOCKER 0
+HIGH    3
+MEDIUM  1
+LOW     3
+
+CHANGES REQUESTED
+```
+
+主な問題:
+
+* F1: `AGENTS.md` にQ1 scope外のガバナンス追加
+* F1a: `.env` 読み取りルールの矛盾
+* F1b: `sed` の分類問題
+* F2: CI green証跡未取得
+* F4: AC-3とDD-10の文言矛盾
+
+---
+
+### Fix cycle 2
+
+F1 / F1a / F1b / F4を解消。
+
+残件:
+
+```text
+HIGH 1
+  F2のみ
+```
+
+F2はコード不具合ではなく、
+
+```text
+実際にPR / push
+       ↓
+GitHub Actions実行
+       ↓
+green証跡取得
+```
+
+が必要だった。
+
+---
+
+### Fix cycle 3
+
+PR #2を作成・merge。
+
+```text
+PR head:
+8af9284
+
+merge commit:
+7418cbda2e80056394c9477643a79c4381c4ab42
+```
+
+reviewerがActions APIとlocal git双方からhead SHAを照合。
+
+さらに `verify` jobの
+
+```text
+Run migrations
+Verify
+```
+
+両stepの `conclusion=success` を確認した。
+
+最終結果:
+
+```text
+BLOCKER 0
+HIGH    0
+MEDIUM  0
+LOW     2
+
+READY
+```
+
+---
+
+# 12. Findings
+
+## 解消済み
+
+### F1 — HIGH → 解消
+
+`AGENTS.md` に追加されていたQ1 scope外のガバナンスセクションを削除。
+
+最終的な実質変更は以下のみ。
+
+```text
+docs/task-NN-*.md
+    ↓
+docs/task-ID-*.md
+```
+
+および
+
+```text
+Task 07以降
+    ↓
+managed task（Q系列およびTask 07以降）
+```
+
+---
+
+### F1a — HIGH → 解消
+
+scope外セクション削除に伴って `.env` 自動承認ルールも消滅。
+
+---
+
+### F1b — LOW → 解消
+
+scope外セクション削除に伴い `sed` 分類問題も消滅。
+
+---
+
+### F2 — HIGH → 解消
+
+PR / main push双方のGitHub Actions green証跡を取得。
+
+```text
+34539577786
+34539586345
+```
+
+reviewerも独立検証済み。
+
+---
+
+### F4 — MEDIUM → 解消
+
+AC-3とDD-10のRust Docker image pin方針の表現を統一。
+
+実装方針はDD-10のまま。
+
+```dockerfile
+rust:1.96.0-slim-bookworm
+```
+
+---
+
+# 13. 残っているLOW指摘
+
+## F5 — Q2へ引き継ぎ
+
+対象:
+
+```text
+.github/workflows/ci.yml
+```
+
+現在:
+
+```yaml
+cancel-in-progress: true
+```
+
+これが `push: main` にも適用される。
+
+Q2で `verify` をrequired checkにする場合、mainへの連続pushによって進行中のrunがcancelされる可能性がある。
+
+Q2のRuleset設計時にconcurrencyを見直す。
+
+---
+
+## F6 — 軽微
+
+対象:
+
+```text
+scripts/update_task_index.py
+back_cargo/rust-toolchain.toml
+```
+
+ファイル末尾に改行がない。
+
+機能・CIへの影響はない。
+
+---
+
+# 14. Q2への引き継ぎ
+
+Q2では以下を維持する。
+
+### 1. required check名
+
+```text
+verify
+```
+
+job名を変更しない。
+
+### 2. CI DB
+
+```text
+PostgreSQL 17 service container
+```
+
+Neon / production secretsは使用しない。
+
+### 3. security audit
+
+```text
+security-audit.yml
+```
+
+はrequired checkにしない。
+
+### 4. concurrency
+
+F5をQ2の設計検討事項として扱う。
+
+```yaml
+cancel-in-progress: true
+```
+
+をmain pushにも適用し続けるべきか確認する。
+
+---
+
+# 15. 再現コマンド
 
 ```bash
 export DATABASE_URL="postgres://ops_hub:ops_hub@localhost:5433/ops_hub"
+
 make verify
+```
+
+---
+
+# 16. 最終状態
+
+```text
+Q1
+CI / Quality Gate 基盤
+
+Acceptance Criteria:
+12 / 12 complete
+
+CI:
+green
+
+Review:
+READY
+
+Spec Deviations:
+none
+
+次タスク:
+Q2 — Branch Protection / Ruleset
 ```

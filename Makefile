@@ -3,6 +3,7 @@
 # 人間 / Claude Code / Codex / 将来の品質CIで共有する唯一の最終品質ゲート。
 verify:
 	@python3 scripts/assert_local_database_url.py
+	@python3 scripts/check_ruleset_contract.py
 	cd back_cargo && env -u DATABASE_URL SQLX_OFFLINE=true cargo check --all-targets --all-features
 	cd back_cargo && cargo fmt --all -- --check
 	cd back_cargo && cargo clippy --all-targets --all-features -- -D warnings

@@ -16,7 +16,7 @@
 
 ## 現在地点
 
-Task 01〜06を完了済みとして扱い、Task 07へ進む前にQ1〜Q3を実施する。次はQ1。
+Task 01〜06とQ1〜Q2を完了済みとして扱い、Task 07へ進む前にQ3を実施する。次はQ3。
 
 | Task | 内容 | 状態 |
 |---:|---|---|
@@ -26,12 +26,12 @@ Task 01〜06を完了済みとして扱い、Task 07へ進む前にQ1〜Q3を実
 | 04 | AppError / RFC 9457 problem+json | done |
 | 05 | RunLock / advisory lock | done |
 | 06 | `POST /v1/runs` 骨格 | done |
-| Q1 | CI / Quality Gate 基盤 | next |
-| Q2 | main branch protection | planned |
-| Q3 | Dependabot / dependency operations | planned |
+| Q1 | CI / Quality Gate 基盤 | done |
+| Q2 | main branch protection | done |
+| Q3 | Dependabot / dependency operations | next |
 | 07 | 取り残し lock 回収 + run入口仕様の仕上げ | planned |
 
-Q1〜Q3の完了後は、Task 07以降を `docs/implementation-plan.md` の順序で進める。
+次はQ3を実施する。Q3完了後は、Task 07以降を `docs/implementation-plan.md` の順序で進める。
 
 ## 現在の技術スタック
 
