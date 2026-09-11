@@ -19,6 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    env:
+      DATABASE_URL: postgres://ops_hub:ops_hub@localhost:5432/ops_hub
+
     services:
       postgres:
         image: postgres:17-bookworm
@@ -58,4 +61,5 @@ jobs:
         with:
           tool: sqlx-cli@0.9
 
-
+      - name: Verify
+        run: make verify
