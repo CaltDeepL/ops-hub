@@ -58,11 +58,6 @@ jobs:
         with:
           tool: sqlx-cli@0.9
 
-      - name: Run migrations
-        working-directory: back_cargo
-        env:
-          DATABASE_URL: postgres://ops_hub:ops_hub@localhost:5432/ops_hub
-        run: cargo sqlx migrate run
 
       - name: Verify
         env:
