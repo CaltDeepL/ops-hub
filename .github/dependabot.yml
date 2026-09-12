@@ -1,0 +1,32 @@
+version: 2
+updates:
+  # フロントエンド(React/Vite、リポジトリ直下のpackage.json)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  # バックエンド(Rust/Axum、back_cargo/Cargo.toml)
+  - package-ecosystem: "cargo"
+    directory: "/back_cargo"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  # ci.ymlのuses:はfull commit SHA固定のため、
+  # Dependabotの更新PRでSHAとバージョンコメントを一緒に上げる
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+      include: "scope"
