@@ -9,6 +9,10 @@ updates:
     commit-message:
       prefix: "chore"
       include: "scope"
+    ignore:
+    - dependency-name: "typescript"
+      update-types:
+        - "version-update:semver-major"
 
   # バックエンド(Rust/Axum、back_cargo/Cargo.toml)
   - package-ecosystem: "cargo"
@@ -30,3 +34,4 @@ updates:
     commit-message:
       prefix: "ci"
       include: "scope"
+      
