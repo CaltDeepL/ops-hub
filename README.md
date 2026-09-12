@@ -6,7 +6,7 @@
 
 ## 現在の実装状態
 
-| 項目 | 状態 | 確認結果 |
+| 項目 | 状態 | 確認結果 |git switch main && git pull 
 |---|---|---|
 | フロントエンド | 不完全なscaffold | React 19 / Vite 8の初期画面は存在するがbuild不能 |
 | Rustバックエンド | 未配置 | `Cargo.toml`、`back_cargo/`、Rust sourceが存在しない |

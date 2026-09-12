@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::Context as _;
 use clap::{Parser, Subcommand};
-use ops_hub::{app, config::Config, state::AppState};
+use ops_hub::{app, config::Config, recovery, state::AppState};
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
@@ -26,6 +26,20 @@ enum Command {
         port: u16,
         #[arg(long, default_value_t = 3)]
         timeout_secs: u64,
+    },
+    /// 取り残された advisory lock の脱出ハッチ（タスク7）。
+    ///
+    /// 既定では**見るだけ**。`--force` を付けたときだけ保持セッションを切る。
+    /// 通常運用では使わない。`POST /v1/runs` が延々と `already_running` を
+    /// 返し続けるときの最終手段。
+    Unlock {
+        /// 保持セッションを実際に切断する。付けなければ状態の表示のみ。
+        #[arg(long)]
+        force: bool,
+        /// `--force` の巻き添えを避けるための下限。この秒数より長く
+        /// `idle` が続いているセッションでなければ切らない。
+        #[arg(long, default_value_t = 600.0)]
+        min_idle_secs: f64,
     },
 }
 
@@ -52,7 +66,83 @@ async fn main() -> ExitCode {
                 }
             }
         }
+        Command::Unlock {
+            force,
+            min_idle_secs,
+        } => {
+            init_tracing();
+            match unlock(force, min_idle_secs).await {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    tracing::error!(error = format!("{e:#}"), "unlock に失敗しました");
+                    ExitCode::FAILURE
+                }
+            }
+        }
     }
+}
+
+/// 取り残された advisory lock を調べ、`--force` のときだけ解放する。
+///
+/// サーバを起動せず、その場で1本だけ繋いで見る。`serve()` と違って
+/// `connect_lazy` にしないのは、DBに繋がらないなら「調べられなかった」を
+/// 即座に返したいため。黙って空振りすると、握られていないのか繋がっていないのか
+/// 区別できない。
+async fn unlock(force: bool, min_idle_secs: f64) -> anyhow::Result<()> {
+    let config = Config::from_env()?;
+
+    let pool = PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(config.db_acquire_timeout)
+        .connect(&config.database_url)
+        .await
+        .context("データベースに接続できません")?;
+
+    let key = config.run_lock_key;
+    let Some(holder) = recovery::lock_holder(&pool, key).await? else {
+        tracing::info!(key, "advisory lock は誰も保持していません。回収は不要です");
+        return Ok(());
+    };
+
+    tracing::info!(
+        key,
+        pid = holder.pid,
+        state = ?holder.state,
+        idle_secs = ?holder.idle_secs,
+        client_addr = ?holder.client_addr,
+        "advisory lock の保持セッション"
+    );
+
+    if !force {
+        tracing::info!(
+            "切断するには --force を付けて再実行してください。\
+             state=active の場合は正常に巡回中の可能性があります"
+        );
+        return Ok(());
+    }
+
+    // 生きている実行を撃たないための最後の関門。idle_secs が取れない
+    // （state_change が NULL）場合も、判断材料が無いので切らない。
+    let idle_secs = holder.idle_secs.unwrap_or(0.0);
+    if idle_secs < min_idle_secs {
+        anyhow::bail!(
+            "保持セッションの idle は {idle_secs:.0} 秒で、下限 {min_idle_secs:.0} 秒に達していません。\
+             巡回中の可能性があります。本当に切るなら --min-idle-secs を下げてください"
+        );
+    }
+
+    let terminated = recovery::terminate_holder(&pool, holder.pid).await?;
+    anyhow::ensure!(terminated, "PID {} の切断に失敗しました", holder.pid);
+
+    // ロックが落ちても runs の行は running のまま残る。次の
+    // POST /v1/runs でスイーパーが拾うが、ここでも掃いておくと状態が揃う。
+    let swept = recovery::sweep_stale_runs(&pool, config.run_stale_after_secs).await?;
+    tracing::info!(
+        swept = swept.len(),
+        "advisory lock を解放しました（取り残された run も締めました）"
+    );
+
+    Ok(())
 }
 
 async fn serve() -> anyhow::Result<()> {
