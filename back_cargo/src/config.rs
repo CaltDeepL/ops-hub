@@ -17,6 +17,11 @@ pub struct Config {
     pub db_acquire_timeout: Duration,
     /// advisory lock のキー。DB単位のスコープなので環境ごとに変える必要はない。
     pub run_lock_key: i64,
+    /// `running` のまま何秒放置されたらスイーパーが `failed` に倒すか（基本設計 3.4）。
+    ///
+    /// 秒で持つのは、`make_interval(secs => ...)` が `double precision` を取るため。
+    /// `Duration` から毎回変換するより、境界で1度だけ検証して素の `f64` で持ち回る。
+    pub run_stale_after_secs: f64,
 }
 
 impl Config {
@@ -30,12 +35,23 @@ impl Config {
             return Err(anyhow!("環境変数 RUN_LOCK_KEY は正の整数にしてください"));
         }
 
+        // 既定10分（基本設計 3.4）。targets.timeout_ms の上限が120秒なので、
+        // 対象が数十件あっても正常な1巡は収まる。短くしすぎると走行中の run を
+        // 巻き込んで failed に倒すため、下限を設ける。
+        let run_stale_after_secs = parse_env("RUN_STALE_AFTER_SECS", 600.0_f64)?;
+        if !(run_stale_after_secs.is_finite() && run_stale_after_secs >= 60.0) {
+            return Err(anyhow!(
+                "環境変数 RUN_STALE_AFTER_SECS は60以上の有限な秒数にしてください"
+            ));
+        }
+
         Ok(Self {
             database_url,
             port: parse_env("PORT", 8080)?,
             db_max_connections: parse_env("DB_MAX_CONNECTIONS", 5)?,
             db_acquire_timeout: Duration::from_secs(parse_env("DB_ACQUIRE_TIMEOUT_SECS", 5)?),
             run_lock_key,
+            run_stale_after_secs,
         })
     }
 
@@ -133,6 +149,24 @@ mod tests {
     }
 
     #[test]
+    fn 放置判定の閾値は下限を下回れない() {
+        // 走行中の run を巻き込むほど短い値を弾けているか。
+        // from_env は環境変数に依存するので、判定式そのものを確かめる
+        for invalid in [0.0, 59.9, f64::NAN, f64::INFINITY] {
+            assert!(
+                !(invalid.is_finite() && invalid >= 60.0),
+                "{invalid} を許容してしまっている"
+            );
+        }
+        for valid in [60.0_f64, 600.0_f64, 3600.0_f64] {
+            assert!(
+                valid.is_finite() && valid >= 60.0,
+                "{valid} を弾いてしまっている"
+            );
+        }
+    }
+
+    #[test]
     fn プール済みエンドポイントを検出する() {
         let pooled = Config {
             database_url: "postgres://u:p@ep-cool-1-pooler.aws.neon.tech/db".into(),
@@ -140,6 +174,7 @@ mod tests {
             run_lock_key: 8421337,
             db_max_connections: 5,
             db_acquire_timeout: Duration::from_secs(5),
+            run_stale_after_secs: 600.0,
         };
         assert!(pooled.is_pooled_endpoint());
 

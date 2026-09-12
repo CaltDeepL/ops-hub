@@ -58,6 +58,7 @@ fn test_state(db: PgPool) -> AppState {
             db_max_connections: 3,
             db_acquire_timeout: Duration::from_secs(5),
             run_lock_key: KEY,
+            run_stale_after_secs: 600.0,
         }),
     }
 }

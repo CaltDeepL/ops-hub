@@ -13,11 +13,17 @@
 //! 巡回の中身（probe・チェック結果の記録・状態遷移・通知）はタスク8以降。
 //! ここでは「ロックを取り、`runs` に1行作り、202 を返し、背後で締める」までを
 //! 通す。[`perform`] が唯一の空箱で、そこにタスク8が入る。
+//!
+//! ## タスク7で足したもの
+//!
+//! [`start`] の先頭で [`recovery::sweep_stale_runs`] を呼ぶ。常駐スケジューラを
+//! 持たない構成なので、「定期的に回る処理」を置ける場所がここしかない。
 
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::AppResult;
+use crate::recovery;
 use crate::repository::run_repo;
 use crate::run_lock::RunLock;
 use crate::state::AppState;
@@ -46,6 +52,18 @@ pub enum RunOutcome {
 /// タスクへ move し、処理の最後で解放する。**spawn 前に解放してはいけない。**
 /// 解放してしまうと、返した 202 の裏で次の実行が重なって走る。
 pub async fn start(state: &AppState) -> AppResult<RunOutcome> {
+    // ロックを取る前に掃く。常駐スケジューラを持たない構成（基本設計の実行モデル）
+    // では、ここが定期的に回る唯一の場所になる。
+    //
+    // 失敗しても起動は続ける。掃除は観測用の記録を整えるだけで、排他とは無関係
+    // （ロックはセッション終了でサーバ側が解放する）。掃けなかったせいで
+    // 本来の巡回まで止まる方が損失が大きい。
+    if let Err(error) =
+        recovery::sweep_stale_runs(&state.db, state.config.run_stale_after_secs).await
+    {
+        tracing::warn!(error = ?error, "取り残された run の回収に失敗しました（起動は継続します）");
+    }
+
     let Some(lock) = RunLock::try_acquire(&state.db, state.config.run_lock_key).await? else {
         // 競合。実行中の run_id を引いて返す（引けなくても 200 は返す）
         let run_id = run_repo::latest_running(&state.db).await?;
