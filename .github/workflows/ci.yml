@@ -57,7 +57,7 @@ jobs:
         run: npm ci
 
       - name: Install sqlx-cli
-        uses: taiki-e/install-action@5bf6ce016fd2e72eefc647cbca1e4213f65955b8 # v2.87.5
+        uses: taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2.87.9
         with:
           tool: sqlx-cli@0.9
 
