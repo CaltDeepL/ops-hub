@@ -473,7 +473,3 @@ requires TypeScript < 6.1.0
 `typescript-eslint` の正式対応後に再度 Dependabot update を許可する。
 
 ---
-
-
-
-
