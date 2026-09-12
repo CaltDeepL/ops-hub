@@ -5,7 +5,6 @@ CARGO_DIR := back_cargo
 verify:
 	python3 scripts/assert_local_database_url.py
 	python3 scripts/check_ruleset_contract.py
-	false
 	cd $(CARGO_DIR) && \
 		cargo fmt --all -- --check && \
 		cargo clippy --all-targets --all-features -- -D warnings && \
