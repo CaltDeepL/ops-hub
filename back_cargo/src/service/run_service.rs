@@ -10,21 +10,27 @@
 //!
 //! ## タスク6の範囲
 //!
-//! 巡回の中身（probe・チェック結果の記録・状態遷移・通知）はタスク8以降。
-//! ここでは「ロックを取り、`runs` に1行作り、202 を返し、背後で締める」までを
-//! 通す。[`perform`] が唯一の空箱で、そこにタスク8が入る。
+//! 「ロックを取り、`runs` に1行作り、202 を返し、背後で締める」までを通す。
+//!
+//! ## タスク8で足したもの
+//!
+//! [`perform`] に巡回の中身を入れた。`targets` の取得 → probe → `checks` の記録。
+//! 状態遷移（`target_states`）・インシデント・通知はタスク9以降。
 //!
 //! ## タスク7で足したもの
 //!
 //! [`start`] の先頭で [`recovery::sweep_stale_runs`] を呼ぶ。常駐スケジューラを
 //! 持たない構成なので、「定期的に回る処理」を置ける場所がここしかない。
 
-use sqlx::PgPool;
+use anyhow::Context as _;
+use tokio::task::JoinSet;
 use uuid::Uuid;
 
 use crate::error::AppResult;
+use crate::provider::probe::{self, ProbeOutcome};
 use crate::recovery;
-use crate::repository::run_repo;
+use crate::repository::target_repo::Target;
+use crate::repository::{check_repo, run_repo, target_repo};
 use crate::run_lock::RunLock;
 use crate::state::AppState;
 
@@ -82,7 +88,7 @@ pub async fn start(state: &AppState) -> AppResult<RunOutcome> {
         }
     };
 
-    tokio::spawn(execute(state.db.clone(), lock, run_id));
+    tokio::spawn(execute(state.clone(), lock, run_id));
 
     Ok(RunOutcome::Started { run_id })
 }
@@ -91,14 +97,15 @@ pub async fn start(state: &AppState) -> AppResult<RunOutcome> {
 ///
 /// 途中で抜けると `runs` が `running` のまま残り、ロックの解放も飛ぶ。
 /// 失敗しうる処理は [`perform`] に閉じ込め、締めと解放は必ず通る位置に置く。
-async fn execute(db: PgPool, lock: RunLock, run_id: Uuid) {
-    let result = perform(&db, run_id).await;
+async fn execute(state: AppState, lock: RunLock, run_id: Uuid) {
+    let db = &state.db;
+    let result = perform(&state, run_id).await;
 
     let finished = match &result {
-        Ok(targets_checked) => run_repo::finish_completed(&db, run_id, *targets_checked).await,
+        Ok(targets_checked) => run_repo::finish_completed(db, run_id, *targets_checked).await,
         Err(error) => {
             tracing::error!(%run_id, error = ?error, "実行が失敗しました");
-            run_repo::finish_failed(&db, run_id, &truncate(&error.to_string())).await
+            run_repo::finish_failed(db, run_id, &truncate(&format!("{error:#}"))).await
         }
     };
 
@@ -114,13 +121,80 @@ async fn execute(db: PgPool, lock: RunLock, run_id: Uuid) {
     release(lock).await;
 }
 
-/// 1巡の実処理。成功時は巡回した対象数を返す。
+/// 1巡の実処理。成功時は `checks` に記録できた件数を返す。
 ///
-/// タスク6では空箱。タスク8で `targets` の取得・probe・`checks` の記録が入り、
-/// タスク9以降で状態遷移とインシデント生成が乗る。
-async fn perform(_db: &PgPool, run_id: Uuid) -> anyhow::Result<i32> {
-    tracing::info!(%run_id, "実行を開始しました（タスク6では対象の巡回を行いません）");
-    Ok(0)
+/// `Err` を返すのは「対象一覧を引けなかった」場合だけ。対象が落ちているのは
+/// 正常系なので probe は値で結果を返し、`checks` の INSERT が1件失敗しても
+/// その件を諦めて巡回を続ける。戻り値は記録できた件数なので、
+/// `runs.targets_checked` と対象数がずれていれば記録漏れがあったと分かる。
+///
+/// ## DB コネクションを追加で消費しない
+///
+/// spawn するタスクは probe（HTTP）だけを行い、`checks` の INSERT は結果を
+/// 回収するこのループが逐次に実行する。プール既定は5本で、うち1本は
+/// `RunLock` が握ったまま。probe ごとにコネクションを取ると簡単に枯れる。
+async fn perform(state: &AppState, run_id: Uuid) -> anyhow::Result<i32> {
+    let targets = target_repo::list_enabled(&state.db)
+        .await
+        .context("監視対象の取得に失敗しました")?;
+    let total = targets.len();
+    tracing::info!(%run_id, total, "巡回を開始します");
+
+    let concurrency = state.config.probe_concurrency;
+    let mut queue = targets.into_iter();
+    let mut running: JoinSet<(Target, ProbeOutcome)> = JoinSet::new();
+    let mut recorded: i32 = 0;
+
+    loop {
+        while running.len() < concurrency
+            && let Some(target) = queue.next()
+        {
+            let client = state.http.clone();
+            running.spawn(async move {
+                let outcome = probe::probe(&client, &target).await;
+                (target, outcome)
+            });
+        }
+
+        let Some(joined) = running.join_next().await else {
+            break;
+        };
+
+        let (target, outcome) = match joined {
+            Ok(pair) => pair,
+            // probe は panic しない作りだが、万一の panic で1巡全体を落とさない
+            Err(error) => {
+                tracing::error!(%run_id, error = ?error, "probe タスクが異常終了しました");
+                continue;
+            }
+        };
+
+        tracing::info!(
+            %run_id,
+            target = %target.name,
+            result = outcome.result.as_str(),
+            duration_ms = outcome.duration_ms,
+            status_code = ?outcome.status_code,
+            degraded = outcome.degraded,
+            "probe の結果"
+        );
+
+        match check_repo::insert(&state.db, run_id, target.id, &outcome).await {
+            Ok(()) => recorded += 1,
+            Err(error) => tracing::warn!(
+                %run_id,
+                target = %target.name,
+                error = ?error,
+                "checks の記録に失敗しました（巡回は継続します）"
+            ),
+        }
+    }
+
+    if usize::try_from(recorded).ok() != Some(total) {
+        tracing::warn!(%run_id, total, recorded, "記録できなかった対象があります");
+    }
+
+    Ok(recorded)
 }
 
 /// ロックを解放する。失敗しても呼び出し側は続行する。

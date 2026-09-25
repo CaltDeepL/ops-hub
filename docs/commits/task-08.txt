@@ -1,0 +1,25 @@
+feat: Task 08 対象の巡回（targets 取得 → probe → checks 記録）
+
+run_service::perform の空実装を埋め、有効な target を巡回して
+probe 結果を checks に記録するようにした。target_states の更新・
+状態遷移・インシデント・通知は Task 09 以降の範囲で、ここでは触らない。
+
+- provider/probe.rs: HTTP probe。結果を success / http_error /
+  timeout / connection_error に分類し、閾値超えの success を
+  degraded とする。対象の失敗は正常系なので Result を返さない
+- リダイレクトは追わない（301 化を success と誤認しないため）。
+  ボディは読まず、duration_ms は TTFB とする
+- masking.rs: error_detail に載る URL からユーザ情報とクエリ文字列を
+  伏せ、512 文字に詰める（伏せてから詰める）
+- repository/target_repo.rs / check_repo.rs: 有効な target の名前順
+  取得と checks への INSERT。started_at は SQL 側で逆算する
+- PROBE_CONCURRENCY（既定 4）で並行度を絞る。probe は JoinSet で並行、
+  checks の INSERT は回収ループで逐次に行い、DB コネクションを
+  追加で消費しない
+- AppState に probe 用の reqwest::Client を持たせて共有する
+- .sqlx を再生成
+
+テスト: probe_test.rs を追加（probe 単体 9 件 + DB 経由の通し 5 件）。
+make verify PASS（72 passed / 0 failed）。
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

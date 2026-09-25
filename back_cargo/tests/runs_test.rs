@@ -59,7 +59,9 @@ fn test_state(db: PgPool) -> AppState {
             db_acquire_timeout: Duration::from_secs(5),
             run_lock_key: KEY,
             run_stale_after_secs: 600.0,
+            probe_concurrency: 4,
         }),
+        http: ops_hub::provider::probe::build_client().expect("HTTP クライアントを作れる"),
     }
 }
 
@@ -172,7 +174,7 @@ async fn 背景処理が終わるとcompletedで締められる(
         .expect("5秒以内に finished_at が入るはず（背景タスクが締めていない）");
 
     assert_eq!(status, "completed");
-    // タスク6では巡回しないので 0。タスク8でここが変わる
+    // 対象を登録していないので 0。対象ありの経路は probe_test.rs で見る
     assert_eq!(targets_checked, 0);
 
     Ok(())
