@@ -8,7 +8,7 @@
 
 Render / Neon の無料枠を前提に、常駐 scheduler は持たず、外部 scheduler から `POST /v1/runs` を呼び出して1巡を開始する構成です。
 
-> **ポートフォリオプロジェクトです。** 現在は監視実行の入口・排他制御・取り残し回収・CI / Ruleset まで実装済みで、実際の target probe は Task 08 以降で実装します。
+> **ポートフォリオプロジェクトです。** 現在は監視実行の入口・排他制御・取り残し回収・target の HTTP probe と結果記録・CI / Ruleset まで実装済みで、状態遷移・incident・通知は Task 09 以降で実装します。
 
 ---
 
@@ -37,6 +37,7 @@ GitHub Actions などの外部 scheduler から呼び出す場合、前回の巡
 | process liveness | `GET /livez` |
 | 監視 run の開始 | `POST /v1/runs` |
 | stale run の自動回収 | run 開始時の sweeper |
+| 有効な target への HTTP probe と `checks` への記録 | run のバックグラウンド処理 |
 | advisory lock holder の確認 | `ops-hub unlock` |
 | advisory lock holder の手動切断 | `ops-hub unlock --force` |
 
@@ -52,15 +53,18 @@ GitHub Actions などの外部 scheduler から呼び出す場合、前回の巡
 
 競合時の `run_id` はタイミングによって取得できず、`null` になる場合があります。
 
-現在の `run_service::perform` はまだ target を巡回せず、
+run は有効な target を `PROBE_CONCURRENCY`（既定4）件ずつ並行に probe し、結果を `checks` に記録します。
 
-```text
-targets_checked = 0
-```
+| 結果 | 条件 |
+|---|---|
+| `success` | `expected_status` と一致（`degraded_threshold_ms` 超過なら `degraded = true`） |
+| `http_error` | 応答はあったがステータスが不一致（リダイレクトは追わない） |
+| `timeout` | `timeout_ms` 以内に応答ヘッダが返らない |
+| `connection_error` | DNS・TCP・TLS など接続段階の失敗 |
 
-で完了します。
+対象が落ちていても run 自体は `completed` になります。`error_detail` の URL はユーザ情報とクエリ文字列を伏せてから保存します。
 
-target 取得、HTTP probe、状態遷移、incident、Slack 通知は今後の実装範囲です。
+状態遷移、incident、Slack 通知は今後の実装範囲です。
 
 ---
 
@@ -83,12 +87,12 @@ target 取得、HTTP probe、状態遷移、incident、Slack 通知は今後の�
                     ▼
                run_service
                     │
-                    │ Task 08以降
                     ▼
-             target / probe
+         target / probe / checks
                     │
+                    │ Task 09以降
                     ▼
-              checks / incidents
+          target_states / incidents
                     │
                     ▼
              outbox / Slack
@@ -98,7 +102,7 @@ target 取得、HTTP probe、状態遷移、incident、Slack 通知は今後の�
                 （Neon）
 ```
 
-現在は `run_service` の入口、排他制御、run の記録、stale run の回収まで実装済みです。
+現在は `run_service` の入口、排他制御、run の記録、stale run の回収、target の probe と `checks` の記録まで実装済みです。
 
 ### ディレクトリ構成
 
@@ -357,20 +361,23 @@ cargo sqlx prepare --check
 cargo test
 ```
 
-Task 07 完了時点の Rust test:
+Task 08 完了時点の Rust test:
 
 | 分類 | 件数 |
 |---|---:|
-| unit tests | 29 |
+| unit tests | 38 |
+| probe tests | 14 |
 | recovery integration tests | 11 |
 | advisory lock tests | 4 |
 | run API tests | 5 |
-| **合計** | **49** |
+| **合計** | **72** |
 
 ```text
-49 passed
+72 passed
 0 failed
 ```
+
+probe tests では、ローカルの HTTP サーバに対する success / http_error / degraded / timeout / connection_error / HEAD / リダイレクト非追従 / マスキングと、`POST /v1/runs` から `checks` への記録を検証しています。
 
 recovery tests では、stale run の回収、閾値判定、複数 run の一括処理、advisory lock holder の取得、session terminate による lock 解放などを実 DB で検証しています。
 
@@ -482,7 +489,8 @@ merge ALLOWED
 |---|---|
 | Task 01〜06 | 完了 |
 | Task 07: stale run / advisory lock recovery | 完了 |
-| Task 08: target取得・probe・check記録 | 次に実装 |
+| Task 08: target取得・probe・check記録 | 完了 |
+| Task 09: 状態遷移・incident | 次に実装 |
 
 ### Quality / infrastructure
 
@@ -510,7 +518,7 @@ run record
    ↓
 perform()
    ↓
-targets_checked = 0
+targets → probe → checks
 ```
 
 まで実装されています。
@@ -519,11 +527,10 @@ targets_checked = 0
 
 | 優先度 | 項目 | 完了条件 |
 |---|---|---|
-| P1 | target取得・HTTP probe | 登録 target を巡回し結果を取得できる |
-| P1 | checks の保存 | probe 結果を DB に永続化できる |
 | P1 | 状態遷移 | success / failure の変化を判定できる |
 | P1 | incident | 障害発生・復旧を記録できる |
 | P1 | outbox / Slack | 通知を失わず Slack へ送信できる |
+| P1 | target 登録 API | `psql` を使わずに監視対象を登録できる |
 | P2 | 日次集計 | uptime / failure 等を集計できる |
 | P2 | status page | 監視状態を UI から確認できる |
 | P2 | frontend CI | lint / build を required quality gate に含める |

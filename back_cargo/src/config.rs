@@ -22,6 +22,12 @@ pub struct Config {
     /// 秒で持つのは、`make_interval(secs => ...)` が `double precision` を取るため。
     /// `Duration` から毎回変換するより、境界で1度だけ検証して素の `f64` で持ち回る。
     pub run_stale_after_secs: f64,
+    /// 1巡の中で同時に投げる probe の数。
+    ///
+    /// 逐次だと対象数 × `timeout_ms`（最大120秒）が1巡の最悪時間になり、
+    /// 5〜6件で `run_stale_after_secs` を超えてスイーパーに倒される。
+    /// 無制限にすると無料枠から外向き接続を張り過ぎる。
+    pub probe_concurrency: usize,
 }
 
 impl Config {
@@ -45,6 +51,11 @@ impl Config {
             ));
         }
 
+        let probe_concurrency = parse_env("PROBE_CONCURRENCY", 4_usize)?;
+        if probe_concurrency == 0 {
+            return Err(anyhow!("環境変数 PROBE_CONCURRENCY は1以上にしてください"));
+        }
+
         Ok(Self {
             database_url,
             port: parse_env("PORT", 8080)?,
@@ -52,6 +63,7 @@ impl Config {
             db_acquire_timeout: Duration::from_secs(parse_env("DB_ACQUIRE_TIMEOUT_SECS", 5)?),
             run_lock_key,
             run_stale_after_secs,
+            probe_concurrency,
         })
     }
 
@@ -175,6 +187,7 @@ mod tests {
             db_max_connections: 5,
             db_acquire_timeout: Duration::from_secs(5),
             run_stale_after_secs: 600.0,
+            probe_concurrency: 4,
         };
         assert!(pooled.is_pooled_endpoint());
 

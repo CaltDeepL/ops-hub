@@ -1,0 +1,98 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id,\n               name,\n               url,\n               method,\n               expected_status,\n               timeout_ms,\n               degraded_threshold_ms\n        FROM targets\n        WHERE enabled\n        ORDER BY lower(name)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "targets",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "targets",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "targets",
+            "name": "url"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "method",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "targets",
+            "name": "method"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "expected_status",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "targets",
+            "name": "expected_status"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "timeout_ms",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "targets",
+            "name": "timeout_ms"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "degraded_threshold_ms",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "targets",
+            "name": "degraded_threshold_ms"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "86b4abf173bc58f3fcd31c99dd074c8efbea41fc901aa99b3776015a8ec585e6"
+}

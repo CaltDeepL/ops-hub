@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::Context as _;
 use clap::{Parser, Subcommand};
-use ops_hub::{app, config::Config, recovery, state::AppState};
+use ops_hub::{app, config::Config, provider::probe, recovery, state::AppState};
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
@@ -177,7 +177,12 @@ async fn serve() -> anyhow::Result<()> {
 
     tracing::info!(addr = %listener.local_addr()?, "待ち受けを開始しました");
 
-    let state = AppState { db: pool, config };
+    let http = probe::build_client().context("HTTP クライアントを初期化できません")?;
+    let state = AppState {
+        db: pool,
+        config,
+        http,
+    };
 
     axum::serve(listener, app(state))
         .with_graceful_shutdown(shutdown_signal())
