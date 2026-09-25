@@ -1,18 +1,21 @@
-# タスク01：プロジェクト雛形・/health・compose・Dockerfile
+# Task 01: プロジェクト雛形・/health・compose・Dockerfile
 
 | 項目 | 内容 |
 |---|---|
 | 上位ドキュメント | ops-hub-detail v1.0 10章 タスク1 |
-| 完了条件 | `docker compose up --build -d` でAPIがhealthyになり `/health` が疎通する |
-| ステータス | （着手中 / 完了）|
+| 目的 | API の雛形を作り、DB 接続状態を含む `/health` とコンテナのヘルスチェックを成立させる |
+| 完了条件 | `docker compose up --build -d` で API が healthy になり `/health` が疎通する |
+| ステータス | 完了（後続タスクがこの雛形の上で動作・検証済み。本タスク単体の検証記録は未記入） |
 
-## 1. ゴールと完了条件
+## 1. 実施内容
 
-- `GET /health` がDB接続状態を含めて返る（N-13）
+### 完了条件の内訳
+
+- `GET /health` が DB 接続状態を含めて返る（N-13）
 - `docker compose ps` で api コンテナが `healthy` になる
-- DBを止めると `/health` が 503 を返し、コンテナが `unhealthy` に落ちる
+- DB を止めると `/health` が 503 を返し、コンテナが `unhealthy` に落ちる
 
-## 2. このタスクで作ったもの
+### 作成ファイル
 
 | ファイル | 役割 |
 |---|---|
@@ -25,29 +28,24 @@
 | `Dockerfile` | rust:1.96-slim-bookworm → distroless/cc-debian12:nonroot |
 | `compose.yaml` | postgres:17 + api |
 
-まだ作っていないもの（意図的）：`error.rs`（タスク4）、`migrations/`（タスク2〜3）、`domain/` `service/` `repository/` `provider/`（タスク8以降）。
+意図的に作っていないもの：`error.rs`（Task 04）、`migrations/`（Task 02〜03）、`domain/` `service/` `repository/` `provider/`（Task 08 以降）。
 
-## 3. 設計判断の根拠
+## 2. 設計判断
 
 | # | 判断 | 根拠 |
 |---|---|---|
-| 1 | プールを `connect_lazy` で作る | 起動時にDBへ繋ぎにいかない。スピンダウン前提の環境で、DBの一時的な不調を「起動失敗」に化けさせない。DBの死は `/health` の503で表明する |
-| 2 | DB不通時の `/health` は 503 | 200のままだとDockerもプラットフォームも healthy と誤判定する |
-| 3 | Docker の HEALTHCHECK に自バイナリの `healthcheck` を使う | distroless にはシェルも curl も無い。設計で clap に `healthcheck` を置いた理由がこれ |
+| 1 | プールを `connect_lazy` で作る | 起動時に DB へ繋ぎにいかない。スピンダウン前提の環境で、DB の一時的な不調を「起動失敗」に化けさせない。DB の死は `/health` の 503 で表明する |
+| 2 | DB 不通時の `/health` は 503 | 200 のままだと Docker もプラットフォームも healthy と誤判定する |
+| 3 | Docker の HEALTHCHECK に自バイナリの `healthcheck` を使う | distroless にはシェルも curl も無い。clap に `healthcheck` を置いた理由がこれ |
 | 4 | SIGTERM を拾って graceful shutdown | スピンダウン時に送られてくる。拾わないと毎回強制終了になる |
-| 5 | `-pooler` 検出は警告のみ（起動は止めない） | 詳細設計1.4。ローカルや将来のプール利用を全面禁止にはしない |
-| 6 | ビルダを `bookworm` で明示固定 | distroless/cc-debian12 と glibc を揃える。ここがずれると実行時に落ちる |
+| 5 | `-pooler` 検出は警告のみ（起動は止めない） | 詳細設計 1.4。ローカルや将来のプール利用を全面禁止にはしない |
+| 6 | ビルダを `bookworm` で明示固定 | distroless/cc-debian12 と glibc を揃える。ずれると実行時に落ちる |
 
-## 4. つまずいた点と教訓
+## 3. つまずいた点と教訓
 
-（実際に動かして埋める）
+記録なし（作成当時「実際に動かして埋める」とされたまま未記入）。
 
-## 5. 次タスクへの引き継ぎ
-
-- タスク2でマイグレーション0001を作る。`sqlx-cli` は `cargo install sqlx-cli --no-default-features --features rustls,postgres`
-- 残る宿題3（Neonの直接エンドポイント確認）はこのタスクの範囲。Neonの接続文字列を `.env` に入れて `serve` を起動し、警告が出ないことを確認する
-
-## 6. 再現コマンド
+## 4. 再現コマンド
 
 ```bash
 cp .env.example .env
@@ -61,3 +59,10 @@ docker compose ps                      # api が unhealthy に落ちる
 
 docker compose down -v
 ```
+
+> 現在の compose ではホスト側 API ポートは `8081`（README 参照）。上記の `8080` は作成当時の値。
+
+## 5. 次タスクへの引き継ぎ
+
+- Task 02 でマイグレーション 0001 を作る。`sqlx-cli` は `cargo install sqlx-cli --no-default-features --features rustls,postgres`
+- 宿題3（Neon の直接エンドポイント確認）はこのタスクの範囲。Neon の接続文字列を `.env` に入れて `serve` を起動し、警告が出ないことを確認する（→ Task 05 で完了）
