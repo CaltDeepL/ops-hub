@@ -1,11 +1,15 @@
 # Render セットアップ（ops-hub）
 
-Neon 作成後の手順。`render.yaml` を Blueprint として反映し、GitHub Actions（タスク15）から
-叩ける公開 URL を用意するところまで。
+| 項目 | 内容 |
+|---|---|
+| 目的 | `render.yaml` を Blueprint として反映し、GitHub Actions（タスク15）から叩ける公開 URL を用意する |
+| 完了条件 | 本番 URL で `/livez` と `/health` がともに 200 を返す |
+| 前提 | `Neon_setup.md` 完了（Neon は `ap-southeast-1`） |
+| ステータス | 完了（Task 17 時点で Render / Neon へのデプロイ済みと記録。ただし `render.yaml` は現在のリポジトリに存在しない） |
 
----
+## 1. 実施内容（手順）
 
-## 1. 前提の確認
+### 1.1 前提の確認
 
 | 項目 | 値 |
 |---|---|
@@ -14,15 +18,11 @@ Neon 作成後の手順。`render.yaml` を Blueprint として反映し、GitHu
 | プラン | Free |
 | ランタイム | Docker（リポジトリの `Dockerfile`） |
 
-Render に東京は無いので、Neon を Singapore に置いた判断とセットで固定する。
-**リージョンはサービス作成後に変更できない。**変えるにはサービスを作り直す。
+**リージョンはサービス作成後に変更できない。** 変えるにはサービスを作り直す。
 
----
+### 1.2 事前に入れるコード変更（`/livez`）
 
-## 2. 事前に入れるコード変更（`/livez`）
-
-`render.yaml` の `healthCheckPath` は `/livez` を指している。この時点では存在しないので、
-Blueprint を反映する前に追加する。理由は4章。
+`render.yaml` の `healthCheckPath` は `/livez` を指している。Blueprint を反映する前に追加する（理由は2章）。
 
 `src/handler/livez.rs`
 
@@ -30,7 +30,7 @@ Blueprint を反映する前に追加する。理由は4章。
 //! liveness 用。**DBに触らない。**
 //!
 //! プラットフォーム（Render）の再起動判断に使う。プロセスが生きていれば 200 を返す。
-//! DB疎通まで見る `/health` とは目的が違う（4章）。
+//! DB疎通まで見る `/health` とは目的が違う。
 
 use axum::http::StatusCode;
 
@@ -58,83 +58,18 @@ pub async fn livez() -> (StatusCode, &'static str) {
  }
 ```
 
----
-
-## 3. Blueprint の反映
+### 1.3 Blueprint の反映
 
 1. `render.yaml` をリポジトリのルートに置いて `main` に push する
 2. Render ダッシュボード → **Blueprints** → **New Blueprint Instance**
 3. リポジトリを選び、ブランチ `main` を指定して **Apply**
-4. `sync: false` の3件（`DATABASE_URL` / `SLACK_WEBHOOK_URL` / `SERVICE_TOKENS`）は
-   値の入力を求められる。この時点では `DATABASE_URL` だけ入れ、残りは空のままでよい
-   （タスク11・12で埋める）
+4. `sync: false` の3件（`DATABASE_URL` / `SLACK_WEBHOOK_URL` / `SERVICE_TOKENS`）は値の入力を求められる。この時点では `DATABASE_URL` だけ入れ、残りは空のままでよい（タスク11・12で埋める）
 
-`DATABASE_URL` は Neon の**直接エンドポイント**。`-pooler` が入っていないことを
-貼り付ける前に目視する。起動ログに `-pooler` 警告が出ていないことでも確認できる。
+`DATABASE_URL` は Neon の**直接エンドポイント**。`-pooler` が入っていないことを貼り付ける前に目視する。
 
-### 初回デプロイの確認
+### 1.4 デプロイのトリガ
 
-```bash
-curl -i https://ops-hub.onrender.com/livez     # 200 ok（DBに触らない）
-curl -i https://ops-hub.onrender.com/health    # 200 {"status":"ok",...,"db":"up"}
-```
-
-`/health` が 503 を返す場合は `DATABASE_URL` が誤っている。ログの
-`database = postgres://ops_hub:***@...` を見てホストを確認する。
-
----
-
-## 4. なぜ `healthCheckPath` を `/health` にしないのか
-
-`/health` は **DB疎通まで確認して、到達不能なら 503 を返す**設計（タスク1）。これは
-readiness の意味づけであって、liveness ではない。
-
-Render は `healthCheckPath` が失敗し続けるインスタンスを異常とみなして再起動する。
-`/health` を指定すると、**Neon 側の一時的な不調でアプリのプロセスが殺される**。
-ops-hub は「監視する側」なので、監視対象や依存先が不調なときこそ生き残って
-インシデントを記録し通知を出す必要がある。ここで落ちると設計の意図が反転する。
-
-- `/livez` … プロセスが生きているか。Render の再起動判断に使う
-- `/health` … DBまで含めて機能しているか。デッドマンスイッチと運用当番が見る
-
-`/health` を捨てるわけではない。**見る主体が違うので分ける。**
-
----
-
-## 5. 無料枠（750インスタンス時間/月）の見積もり
-
-要件定義 v0.2 で案Bを選んだ根拠を、実際の数字で確認しておく。
-
-Render Free は**15分間 inbound が無いとスピンダウン**し、次のリクエストで
-約1分かけて起動する。ops-hub は60分間隔なので、1回の run につき
-
-```
-起動 約1分 + スピンダウンまでの待機 15分 ≒ 16分
-```
-
-がインスタンス時間として計上される。
-
-| 項目 | 計算 | 値 |
-|---|---|---|
-| 1日 | 16分 × 24回 | 約 6.4 時間 |
-| 1か月 | 6.4 × 30 | **約 192 時間** |
-| 残り | 750 − 192 | 約 558 時間 |
-
-750時間は**ワークスペース単位**で、asset-tracker の Web Service と共有する。
-残り558時間を asset-tracker が使う形になるので、asset-tracker が常時起動していると
-枯渇する。asset-tracker 側もスピンダウンする Free プランなら問題ない。
-
-> 枯渇すると Free の Web Service は翌月まで停止する。ops-hub が止まると
-> GitHub Actions のワークフローが失敗し、デッドマンスイッチとしてメールが届く。
-> **枯渇そのものは検知できる設計になっている**が、原因が「無料枠切れ」だと
-> 気づくまで時間を食うので、Render の Usage を運用当番の確認項目に入れる。
-
----
-
-## 6. デプロイのトリガ
-
-`autoDeploy: false` にしてある。asset-tracker（#24）と同じ「CI green → Deploy Hook」に
-揃えるため。
+`autoDeploy: false` にしてある。asset-tracker（#24）と同じ「CI green → Deploy Hook」に揃えるため。
 
 1. Render ダッシュボード → Settings → **Deploy Hook** の URL をコピー
 2. GitHub リポジトリの Secrets に `RENDER_DEPLOY_HOOK_URL` として登録
@@ -142,19 +77,40 @@ Render Free は**15分間 inbound が無いとスピンダウン**し、次の�
 
 タスク16（CI）で実装する。それまでは Render ダッシュボードの **Manual Deploy** で足りる。
 
-> #16 で踏んだ `paths` フィルタの罠に注意。`ci.yml` の `paths` に対象外の
-> ディレクトリしか変えていない PR は CI がスキップされ、Deploy Hook も飛ばない。
+## 2. 設計判断
 
----
+### Render のリージョンを Neon と揃える（singapore）
 
-## 7. ビルド時間（Rust + Docker の宿題）
+Render に東京は無い。Neon を Singapore に置いた判断とセットで固定する。
 
-現在の `Dockerfile` は `COPY . .` してから `cargo build` する構成なので、
-**ソースを1行変えるたびに依存クレートを全部ビルドし直す。** axum + sqlx + reqwest の
-フルビルドは数分〜10分かかる。Render のパイプライン時間を無駄に食う。
+### `healthCheckPath` を `/health` ではなく `/livez` にする
 
-タスク16でまとめて対処する。方針は依存だけを先にビルドするレイヤを作ること
-（`cargo-chef`、またはダミーの `src/main.rs` を置いて `cargo build` する手法）。
+`/health` は **DB 疎通まで確認して、到達不能なら 503 を返す**設計（Task 01）。これは readiness の意味づけであって liveness ではない。
+
+Render は `healthCheckPath` が失敗し続けるインスタンスを異常とみなして再起動する。`/health` を指定すると、**Neon 側の一時的な不調でアプリのプロセスが殺される**。ops-hub は「監視する側」なので、依存先が不調なときこそ生き残ってインシデントを記録し通知を出す必要がある。
+
+- `/livez` … プロセスが生きているか。Render の再起動判断に使う
+- `/health` … DB まで含めて機能しているか。デッドマンスイッチと運用当番が見る
+
+**見る主体が違うので分ける。**
+
+### 無料枠（750インスタンス時間/月）で足りることを数字で確認する
+
+Render Free は**15分間 inbound が無いとスピンダウン**し、次のリクエストで約1分かけて起動する。60分間隔なので1回の run につき「起動 約1分 + スピンダウンまでの待機 15分 ≒ 16分」が計上される。
+
+| 項目 | 計算 | 値 |
+|---|---|---|
+| 1日 | 16分 × 24回 | 約 6.4 時間 |
+| 1か月 | 6.4 × 30 | **約 192 時間** |
+| 残り | 750 − 192 | 約 558 時間 |
+
+750時間は**ワークスペース単位**で asset-tracker の Web Service と共有する。asset-tracker が常時起動していると枯渇するが、Free プランでスピンダウンするなら問題ない。
+
+> 枯渇すると Free の Web Service は翌月まで停止する。ops-hub が止まると GitHub Actions のワークフローが失敗し、デッドマンスイッチとしてメールが届く。**枯渇そのものは検知できる**が、原因が「無料枠切れ」だと気づくまで時間を食うので、Render の Usage を運用当番の確認項目に入れる。
+
+### Docker ビルドのキャッシュ最適化は後回し
+
+現在の `Dockerfile` は `COPY . .` してから `cargo build` するので、**ソースを1行変えるたびに依存クレートを全部ビルドし直す**（数分〜10分）。依存だけを先にビルドするレイヤ（`cargo-chef` 等）で対処するが、初回デプロイを通すのが先なので**今は現行の Dockerfile のままでよい。**
 
 ```dockerfile
 # 方針のイメージ（タスク16で実装する）
@@ -173,19 +129,27 @@ COPY . .
 RUN cargo build --release
 ```
 
-初回デプロイを通すのが先なので、**今は現行の Dockerfile のままでよい。**
+## 3. つまずいた点と教訓
 
----
+- **`paths` フィルタの罠（#16 で踏んだもの）。** `ci.yml` の `paths` に対象外のディレクトリしか変えていない PR は CI がスキップされ、Deploy Hook も飛ばない（ops-hub では Task 20 以降、`check_ruleset_contract.py` が `paths` / `paths-ignore` を拒否している）
+- **`/health` が 503 を返す場合は `DATABASE_URL` が誤っている。** ログの `database = postgres://ops_hub:***@...` を見てホストを確認する
 
-## 8. 次にやること
+## 4. 再現コマンド
+
+```bash
+curl -i https://ops-hub.onrender.com/livez     # 200 ok（DBに触らない）
+curl -i https://ops-hub.onrender.com/health    # 200 {"status":"ok",...,"db":"up"}
+```
+
+## 5. 次タスクへの引き継ぎ
 
 | 順序 | 内容 | タスク |
 |---|---|---|
-| 1 | `/livez` を追加して push | 本ドキュメント2章 |
-| 2 | Blueprint 反映・`DATABASE_URL` 設定・`/livez` と `/health` の疎通確認 | 本ドキュメント3章 |
-| 3 | `POST /v1/runs` の実装 | タスク6 |
+| 1 | `/livez` を追加して push | 本ドキュメント 1.2（完了） |
+| 2 | Blueprint 反映・`DATABASE_URL` 設定・`/livez` と `/health` の疎通確認 | 本ドキュメント 1.3 |
+| 3 | `POST /v1/runs` の実装 | Task 06（完了） |
 | 4 | GitHub Actions から 202 を確認 | タスク15 |
+| 5 | Deploy Hook と Docker ビルドのキャッシュ最適化 | タスク16 |
 
-宿題4（Render のリクエストタイムアウト実測、`--max-time 120` の妥当性）は
-タスク15で確認する。`POST /v1/runs` は 202 を即返す設計（D-1）なので、
-実質の待ち時間はスピンアップの約1分。120秒は妥当な線に見えるが、実測で裏を取る。
+- 宿題4（Render のリクエストタイムアウト実測、`--max-time 120` の妥当性）はタスク15で確認する。`POST /v1/runs` は 202 を即返す設計（D-1）なので、実質の待ち時間はスピンアップの約1分。120秒は妥当に見えるが、実測で裏を取る
+- `render.yaml` が現在のリポジトリに無い。Task 18 の復元範囲（`back_cargo/`）外だったため、復元要否を確認する
