@@ -137,6 +137,7 @@ ops-hub/
 │       ├── main-ruleset.json
 │       ├── verify_main_ruleset.py
 │       └── sync_main_ruleset.py
+├── CLAUDE.md                # AI エージェント向けの作業ガイド（.cursor/rules/ も同じ内容の要約）
 ├── Makefile
 └── package.json
 ```
@@ -540,7 +541,7 @@ targets → probe → checks
 
 ## 開発記録
 
-タスクごとの設計判断・失敗・検証結果は `docs/` に記録しています。
+タスクごとの設計判断・失敗・検証結果は `docs/` に記録しています。2026-10-24 以降のタスクは GitHub Issue で管理し、作業メモもその Issue に書いています。
 
 このプロジェクトでは、完成したコードだけでなく、
 
