@@ -1,0 +1,15 @@
+---
+description: ops-hub の基本ルール
+alwaysApply: true
+---
+
+# ops-hub
+
+- 詳細なルールはリポジトリ直下の `CLAUDE.md`、設計の背景は `README.md` を正とする
+- バックエンドは `back_cargo/`（Rust / Axum / SQLx）、フロントは `src/`（`package.json` はリポジトリ直下）
+- 変更後は `make verify` を通す。SQL を変えたら `make sqlx-prepare`
+- 常駐スケジューラを持たない。同時実行は advisory lock で制限し、競合は 200 で返す
+- stale run と stale advisory lock は回収方法を分ける
+- Ruleset を変えたら `scripts/github/main-ruleset.json` も直す
+- タスクは GitHub Issue で管理し、作業メモも Issue に書く
+- `.env` や秘密情報をコミット・出力しない
